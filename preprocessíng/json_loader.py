@@ -40,13 +40,8 @@ def json_to_blockmask(path: str) -> pd.DataFrame:
         columns=['output']
     )
 
-    out_df['prev'] = 0
-    last_time = 0
-
-    for i, _ in out_df.iterrows():
-        out_df.loc[i, 'prev'] = i - last_time
-        last_time = i
-
+    out_df['time'] = out_df.index
+    out_df['prev'] = out_df['time'].diff().fillna(out_df['time'])
     out_df['next'] = out_df['prev'].shift(periods=-1).fillna(0)
 
     # Indexes: _time
