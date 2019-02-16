@@ -40,11 +40,13 @@ def create_dataframe(path: str, name: str) -> pd.DataFrame:
 
     out_df['next'] = out_df['prev'].shift(periods=-1).fillna(0)
 
+    # Indexes: _time
+    # Cols: outputs (3 × 4 × 2 × 9 dim np.array), prev, next
     return out_df
 
 
 if __name__ == '__main__':
-    data_path = '/home/ron/Documents/programovani/projekty/deepSaber/data'
+    data_path = '/home/ron/Documents/programovani/projekty/DeepSaber/data'
 
     hard = 'Kneel Before Me/Normal.json'
     extreme_plus = '[A]ddiction/ExpertPlus.json'
