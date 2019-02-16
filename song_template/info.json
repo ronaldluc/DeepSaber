@@ -1,0 +1,22 @@
+{
+  "songName": "",
+  "songSubName": "",
+  "authorName": "",
+  "beatsPerMinute": 60,
+  "previewStartTime": 0,
+  "previewDuration": 0,
+  "coverImagePath": "cover.jpg",
+  "environmentName": "TriangleEnvironment",
+  "oneSaber": false,
+  "difficultyLevels": [
+    {
+      "difficulty": "Expert",
+      "difficultyRank": 4,
+      "audioPath": "song.ogg",
+      "jsonPath": "Expert.json",
+      "offset": 0,
+      "oldOffset": 0,
+      "chromaToggle": "Off"
+    }
+  ]
+}
