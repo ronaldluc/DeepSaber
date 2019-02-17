@@ -87,9 +87,10 @@ def json_to_blockmask(path: str) -> pd.DataFrame:
 
 
 if __name__ == '__main__':
-    data_path = './data'
+    data_path = '../data'
 
-    normal = 'One More Time/Normal.json'
+    normal = '[A]ddiction/Expert.json'
+
     expert = 'One More Time/Expert.json'
 
     df = json_to_blockmask(os.path.join(data_path, normal))
