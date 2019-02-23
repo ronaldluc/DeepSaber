@@ -20,7 +20,7 @@ def data_to_blockmask(data: pd.DataFrame) -> np.array:
     return arr
 
 
-def compute_true_time(df, bpm_df, start_bpm) -> pd.Series:
+def compute_true_time(df: pd.DataFrame, bpm_df: pd.DataFrame, start_bpm: float) -> pd.Series:
     true_time = pd.Series(data=[0.0]*len(df))
 
     current_bpm = start_bpm
