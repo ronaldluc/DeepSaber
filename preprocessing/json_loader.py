@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 
 import numpy as np
 import pandas as pd
@@ -98,5 +99,6 @@ if __name__ == '__main__':
 
     rasputin = 'Rasputin/Hard.json'
 
-    df = json_to_blockmask(os.path.join(data_path, rasputin))
-    print(df)
+    # df = json_to_blockmask(os.path.join(data_path, rasputin))
+    df = json_to_blockmask(sys.argv[1])
+    # print(df)
