@@ -1,7 +1,7 @@
 import os
 
 from typing import List
-from preprocessíng.json_loader import json_to_blockmask
+from json_loader import json_to_blockmask
 
 
 def generate_blocks(path: str, difficulties: List[str]):

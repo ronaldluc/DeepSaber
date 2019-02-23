@@ -93,5 +93,7 @@ if __name__ == '__main__':
 
     expert = 'One More Time/Expert.json'
 
-    df = json_to_blockmask(os.path.join(data_path, normal))
+    rasputin = 'Rasputin/Hard.json'
+
+    df = json_to_blockmask(os.path.join(data_path, rasputin))
     print(df)
