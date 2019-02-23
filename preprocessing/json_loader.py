@@ -41,7 +41,8 @@ def compute_true_time(df: pd.DataFrame, bpm_df: pd.DataFrame, start_bpm: float) 
         while next_event_index < len(bpm_df) and bpm_df.iloc[next_event_index]['_time'] < next_block['_time']:
             next_event = bpm_df.iloc[next_event_index]
             advance_time(next_event)
-            current_bpm = next_event['_value']
+            if next_event['_value'] > 0:
+                current_bpm = next_event['_value']
             next_event_index += 1
 
         advance_time(next_block)
