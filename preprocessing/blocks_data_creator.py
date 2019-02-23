@@ -2,7 +2,7 @@ import os
 from pprint import pprint
 
 from typing import List
-from json_loader import json_to_blockmask
+from preprocessing.json_loader import json_to_blockmask
 
 
 def generate_blocks(path: str, difficulties: List[str]):
