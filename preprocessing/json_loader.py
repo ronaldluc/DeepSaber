@@ -58,15 +58,18 @@ def json_to_blockmask(path: str) -> pd.DataFrame:
     # Throw away bombs
     df = df.loc[df['_type'] != 3]
 
-    # Load event times dataframe
-    bpm_df = pd.DataFrame(data['_events'])
-    bpm_df = bpm_df.loc[
-        bpm_df['_type'] == 14
-    ].filter(items=['_time', '_value'])
-    bpm_df['_value'] /= 1000
-
     # Round to 2 decimal places for normalization for block alignment
     df['_time'] = round(df['_time'], 2)
+
+    # Load event times dataframe
+    bpm_df = pd.DataFrame(
+        data['_events'],
+        columns=['_time', '_value', '_type']
+    )
+    bpm_df = bpm_df.loc[
+        bpm_df.apply(lambda x: '_type' in x and x['_type'] == 14, axis=1)
+    ].filter(items=['_time', '_value'])
+    bpm_df['_value'] /= 1000
 
     # Compute actual time in seconds, not beats
     df['_time'] = compute_true_time(df, bpm_df, data["_beatsPerMinute"])
