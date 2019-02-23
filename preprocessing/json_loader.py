@@ -85,7 +85,7 @@ def json_to_blockmask(path: str) -> pd.DataFrame:
     out_df.drop(labels='time', axis=1)
 
     # Indexes: _time
-    # Cols: outputs (3 × 4 × 2 × 9 dim np.array), prev, next
+    # Cols: outputs (3 × 4 × 2 × 9 dim np.array), time, prev, next
     return out_df
 
 
