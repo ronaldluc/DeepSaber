@@ -103,6 +103,9 @@ venv.bak/
 # mypy
 .mypy_cache/
 
-# data folder
-/data
+# JetBrains
 .idea/
+
+# data folders
+/data
+/OST
