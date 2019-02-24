@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import random
 
 import numpy as np
 import pandas as pd
@@ -82,8 +83,10 @@ def json_to_blockmasks(path: str) -> pd.DataFrame:
     )
 
     out_df['time'] = out_df.index
-    out_df['prev'] = out_df['time'].diff().fillna(out_df['time'])
-    out_df['next'] = out_df['prev'].shift(periods=-1).fillna(0)
+    out_df['prev'] = out_df['time'].diff().fillna(random.uniform(8.0, 15.0))
+    out_df['next'] = out_df['prev'].shift(periods=-1).fillna(
+        random.uniform(8.0, 15.0)
+    )
     out_df.drop(labels='time', axis=1)
 
     # Indexes: _time
