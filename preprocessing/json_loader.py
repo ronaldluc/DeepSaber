@@ -50,7 +50,7 @@ def compute_true_time(df: pd.DataFrame, bpm_df: pd.DataFrame, start_bpm: float) 
     return true_time
 
 
-def json_to_blockmask(path: str) -> pd.DataFrame:
+def json_to_blockmasks(path: str) -> pd.DataFrame:
     with open(path) as json_data:
         data = json.load(json_data)
 
@@ -102,5 +102,5 @@ if __name__ == '__main__':
 
     # df = json_to_blockmask(os.path.join(data_path, rasputin))
     # df = json_to_blockmask(sys.argv[1])
-    df = json_to_blockmask('./data/New Dawn/Expert.json')
+    df = json_to_blockmasks('./data/New Dawn/Expert.json')
     print(df)
