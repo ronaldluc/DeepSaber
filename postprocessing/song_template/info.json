@@ -1,7 +1,7 @@
 {
-  "songName": "",
-  "songSubName": "",
-  "authorName": "",
+  "songName": "Test Song",
+  "songSubName": "For Testing",
+  "authorName": "Puf",
   "beatsPerMinute": 60,
   "previewStartTime": 0,
   "previewDuration": 0,
