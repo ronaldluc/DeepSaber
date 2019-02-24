@@ -3,6 +3,7 @@
   "_beatsPerMinute": 60,
   "_beatsPerBar": 16,
   "_noteJumpSpeed": 10,
+  "_noteJumpStartBeatOffset": 1,
   "_shuffle": 0,
   "_shufflePeriod": 0.5,
   "_time": 0,
