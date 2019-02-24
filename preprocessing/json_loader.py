@@ -56,7 +56,10 @@ def json_to_blockmasks(path: str) -> pd.DataFrame:
         data = json.load(json_data)
 
     # Load notes
-    df = pd.DataFrame(sorted(data['_notes'], key=lambda x: x['_time']))
+    df = pd.DataFrame(
+        sorted((x for x in data['_notes'] if '_time' in x),
+               key=lambda x: x['_time'])
+    )
 
     # Throw away bombs
     df = df.loc[df['_type'] != 3]
