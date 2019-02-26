@@ -1,5 +1,7 @@
 import json
 import os
+import sys
+import random
 
 import numpy as np
 import pandas as pd
@@ -40,7 +42,8 @@ def compute_true_time(df: pd.DataFrame, bpm_df: pd.DataFrame, start_bpm: float) 
         while next_event_index < len(bpm_df) and bpm_df.iloc[next_event_index]['_time'] < next_block['_time']:
             next_event = bpm_df.iloc[next_event_index]
             advance_time(next_event)
-            current_bpm = next_event['_value']
+            if next_event['_value'] >= 30:
+                current_bpm = next_event['_value']
             next_event_index += 1
 
         advance_time(next_block)
@@ -48,12 +51,15 @@ def compute_true_time(df: pd.DataFrame, bpm_df: pd.DataFrame, start_bpm: float) 
     return true_time
 
 
-def json_to_blockmask(path: str) -> pd.DataFrame:
+def json_to_blockmasks(path: str) -> pd.DataFrame:
     with open(path) as json_data:
         data = json.load(json_data)
 
     # Load notes
-    df = pd.DataFrame(data['_notes'])
+    df = pd.DataFrame(
+        sorted((x for x in data['_notes'] if '_time' in x),
+               key=lambda x: x['_time'])
+    )
 
     # Throw away bombs
     df = df.loc[df['_type'] != 3]
@@ -63,7 +69,7 @@ def json_to_blockmask(path: str) -> pd.DataFrame:
 
     # Load event times dataframe
     bpm_df = pd.DataFrame(
-        data['_events'],
+        sorted(data['_events'], key=lambda x: x['_time']),
         columns=['_time', '_value', '_type']
     )
     bpm_df = bpm_df.loc[
@@ -80,8 +86,10 @@ def json_to_blockmask(path: str) -> pd.DataFrame:
     )
 
     out_df['time'] = out_df.index
-    out_df['prev'] = out_df['time'].diff().fillna(out_df['time'])
-    out_df['next'] = out_df['prev'].shift(periods=-1).fillna(0)
+    out_df['prev'] = out_df['time'].diff().fillna(random.uniform(8.0, 15.0))
+    out_df['next'] = out_df['prev'].shift(periods=-1).fillna(
+        random.uniform(8.0, 15.0)
+    )
     out_df.drop(labels='time', axis=1)
 
     # Indexes: _time
@@ -98,5 +106,7 @@ if __name__ == '__main__':
 
     rasputin = 'Rasputin/Hard.json'
 
-    df = json_to_blockmask(os.path.join(data_path, rasputin))
+    # df = json_to_blockmask(os.path.join(data_path, rasputin))
+    # df = json_to_blockmask(sys.argv[1])
+    df = json_to_blockmasks('./data/New Dawn/Expert.json')
     print(df)
