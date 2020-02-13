@@ -38,6 +38,6 @@ class Timer:
     def __init__(self):
         self.start = time()
 
-    def __call__(self, name):
-        print(f'\r{name:>55}: {time() - self.start}')
+    def __call__(self, name, level=5):
+        print(f'\r{name:>{24 + level * 12}}: {time() - self.start}')
         self.start = time()

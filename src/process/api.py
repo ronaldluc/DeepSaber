@@ -1,12 +1,12 @@
 import multiprocessing
 import os
 from typing import Tuple
-from time import time
 
 import numpy as np
 import pandas as pd
 
-from process.compute import JSON, create_info, process_song_folder, path2mfcc_df
+from process.compute import JSON, create_info, process_song_folder, create_ogg_caches, remove_ogg_cache, \
+    create_ogg_paths, generate_snippets
 from utils.types import Config, Timer
 
 
@@ -45,9 +45,25 @@ def create_song_list(path):
     return songs
 
 
-def songs2dataset(song_folders, config: Config):
+def recalculate_mfcc_df_cache(song_folders, config: Config):
+    """
+    MFCC computation is memory heavy.
+    Therefore recalculation catches SIGTERM through `multiprocessing`
+    """
+    if config.audio_processing['use_cache']:
+        return
+
+    ogg_paths = create_ogg_paths(song_folders)
+    remove_ogg_cache(ogg_paths)
+    create_ogg_caches(ogg_paths, config)
+
+
+def songs2dataset(song_folders, config: Config) -> pd.DataFrame:
     print(f'\tCreate dataframe from songs in folders: {len(song_folders):7} folders')
     timer = Timer()
+    recalculate_mfcc_df_cache(song_folders, config)
+    timer('Recalculated MFCC cache')
+
     pool = multiprocessing.Pool()
     folders_to_process = len(song_folders)
     inputs = ((s, config, (i, folders_to_process)) for i, s in enumerate(song_folders))
@@ -67,31 +83,6 @@ def songs2dataset(song_folders, config: Config):
 
     df = df.groupby(['name', 'difficulty']).apply(lambda x: generate_snippets(x, config=Config()))
     timer('Snippets generated')
-    return df
-
-
-def generate_snippets(song_df: pd.DataFrame, config: Config):
-    stack = []
-    ln = len(song_df)
-    window = config.beat_preprocessing['snippet_window_length']
-    skip = config.beat_preprocessing['snippet_window_skip']
-
-    # Check if at least 1 window is possible
-    if ln < window:
-        return None
-
-    # Name and difficulty information is contained in the grouping operation
-    indexes_to_drop = ['name', 'difficulty']
-    song_df = song_df.reset_index(level=indexes_to_drop).drop(columns=indexes_to_drop)
-
-    for s in range(0, ln, skip):
-        # Make sure the dataset contains ends of the songs
-        if s + window > ln:
-            stack.append(song_df.iloc[-window:])
-        else:
-            stack.append(song_df.iloc[s:s + window])
-
-    df = pd.concat(stack, keys=list(range(0, len(song_df), skip)), names=['snippet', 'time'])
     return df
 
 

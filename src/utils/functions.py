@@ -18,6 +18,7 @@ def check_consistency(df: pd.DataFrame):
     for col in df.columns:
         num = np.array(df[col].to_list())
         if len(num.shape) <= 1 and isinstance(df[col].iloc[0], (np.ndarray, list)):
-            return False
+            raise ValueError(f'[check consistency] failed on {col} with shape {num.shape}'
+                             f' and first row of type {type(df[col].iloc[0])}')
 
     return True

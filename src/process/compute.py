@@ -1,6 +1,8 @@
 import json
 import os
 import random
+import signal
+from multiprocessing.pool import Pool
 from sys import stderr
 from time import sleep
 from typing import Union, Mapping, List
@@ -27,7 +29,10 @@ def to_categorical(df: pd.DataFrame) -> pd.DataFrame:
     """
     dim_max = {'_lineLayer': 3, '_lineIndex': 4, '_cutDirection': 9}
     for col, dim in dim_max.items():
-        df[col] = tf.keras.utils.to_categorical(df[col], dim).tolist()
+        # df[col] = tf.keras.utils.to_categorical(df[col], dim).tolist()
+        num = tf.keras.utils.to_categorical(df[col], dim, dtype=np.int8)
+        flatten = np.split(num.flatten(), len(df.index))
+        df[col] = flatten
     return df
 
 
@@ -91,13 +96,13 @@ def compute_time_cols(df):
     """
     df['time'] = df.index
     # previous beat in seconds
-    df['prev'] = df['time'].diff()
+    df['prev'] = df['time'].diff().astype('float32')
     df['prev'] = df['prev'].fillna(df['prev'].max())
     # next beat in seconds
-    df['next'] = df['prev'].shift(periods=-1)
+    df['next'] = df['prev'].shift(periods=-1).astype('float32')
     df['next'] = df['next'].fillna(df['next'].max())
     # which part of the song each beat belongs to
-    df['part'] = df['time'] / df['time'].max()
+    df['part'] = (df['time'] / df['time'].max()).astype('float32')
     df = df.drop(columns='time')
 
     return df
@@ -154,14 +159,15 @@ def beatmap2beat_df(beatmap: JSON, info: JSON) -> pd.DataFrame:
     # Load notes
     df = pd.DataFrame(
         (x for x in beatmap['_notes'] if '_time' in x),
-        columns=['_time', '_type', '_lineLayer', '_lineIndex', '_cutDirection', ]
-    ).sort_values('_time')
+        columns=['_time', '_type', '_lineLayer', '_lineIndex', '_cutDirection', ],
+    ).astype(dtype={'_type': 'int8', '_lineLayer': 'int8', '_lineIndex': 'int8', '_cutDirection': 'int8'}, ) \
+        .sort_values('_time')
 
     # Throw away bombs
     df = df.loc[df['_type'] != 3]
 
     df = df.sort_values(by=['_time', '_lineLayer'])
-    df = to_categorical(df)
+    # df = to_categorical(df)
 
     # Round to 2 decimal places for normalization for block alignment
     df['_time'] = round(df['_time'], 2)
@@ -181,7 +187,7 @@ def beatmap2beat_df(beatmap: JSON, info: JSON) -> pd.DataFrame:
     return out_df
 
 
-def merge_beat_elements(df):
+def merge_beat_elements(df: pd.DataFrame):
     """
     Per each beat each hand should have exactly one beat element.
     :param df: beat elements
@@ -211,6 +217,18 @@ def path2beat_df(beatmap_path, info_path) -> pd.DataFrame:
 
 
 def process_song_folder(folder, config: Config, order=(0, 1)):
+    """
+    Return processed and concatenated dataframe of all songs in `folder`.
+    Returns `None` if an error occurs.
+
+    Each beat is determined by multiindex of song name, difficulty and time (in seconds).
+    Each beat contains information about:
+    - MFCC of audio
+    - beat elements
+    - previous beat elements
+    - time (in seconds) to previous / next beat
+    - proportion of the song it belongs to
+    """
     progress(*order, config=config, name='Processing song folders')
 
     files = []
@@ -224,8 +242,8 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
 
     try:
         mfcc_df = path2mfcc_df(file_ogg, config=config)
-    except ValueError as e:
-        print(f'\tSkipped file {folder_name}  |  {folder}:\n\t\t{e}', file=stderr)
+    except (ValueError, FileNotFoundError) as e:
+        print(f'\n\tSkipped file {folder_name}  |  {folder}:\n\t\t{e}', file=stderr)
         return None
 
     for difficulty in ['Easy', 'Normal', 'Hard', 'Expert', 'ExpertPlus']:
@@ -240,7 +258,7 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
 
                 df_difficulties.append(df)
             except (IndexError, KeyError, UnicodeDecodeError) as e:
-                print(f'\tSkipped file {folder_name}/{difficulty}  |  {folder}:\n\t\t{e}', file=stderr)
+                print(f'\n\tSkipped file {folder_name}/{difficulty}  |  {folder}:\n\t\t{e}', file=stderr)
 
     if df_difficulties:
         return pd.concat(df_difficulties)
@@ -254,9 +272,12 @@ def add_multiindex(df, difficulty, folder_name):
     return df
 
 
-def add_previous_prediction(df, config: Config):
-    df[config.dataset['beat_elements_previous_prediction']] = df[config.dataset['beat_elements']].shift(1)
-    return df.dropna()
+def add_previous_prediction(df: pd.DataFrame, config: Config):
+    prev_prediction = config.dataset['beat_elements_previous_prediction']
+    df[prev_prediction] = df[config.dataset['beat_elements']].shift(1)
+    df = df.dropna().copy()
+    df.loc[:, prev_prediction] = df[prev_prediction].astype('int8')
+    return df
 
 
 def join_closest_index(df: pd.DataFrame, other: pd.DataFrame, other_name: str = 'other') -> pd.DataFrame:
@@ -278,82 +299,32 @@ def join_closest_index(df: pd.DataFrame, other: pd.DataFrame, other_name: str = 
     return df
 
 
-# def ald_path2mfcc_df(file_ogg, config: Config) -> pd.DataFrame:
-#     file_cache = f'{".".join(file_ogg.split(".")[:-1])}.pkl'
-#     if config.audio_processing['use_cache'] and os.path.exists(file_cache):
-#         return pd.read_pickle(file_cache)
-#
-#     signal, samplerate = sf.read(file_ogg)
-#     df = audio2mfcc_df(signal, samplerate, config)
-#     df.to_pickle(file_cache)
-#     return df
+def path2mfcc_df(ogg_path, config: Config) -> pd.DataFrame:
+    cache_path = f'{".".join(ogg_path.split(".")[:-1])}.pkl'
 
-def path2mfcc_df(file_ogg, config: Config) -> pd.DataFrame:
-    file_cache = f'{".".join(file_ogg.split(".")[:-1])}.pkl'
-
-    if config.audio_processing['use_cache'] and os.path.exists(file_cache):
-        df = pd.read_pickle(file_cache)
+    if os.path.exists(cache_path):
+        df = pd.read_pickle(cache_path)
     else:
-        if os.path.exists(file_cache):
-            os.remove(file_cache)
-        signal, samplerate = sf.read(file_ogg)
+        if config.audio_processing['use_cache']:
+            raise FileNotFoundError('Cache file not found')
+        signal, samplerate = sf.read(ogg_path)
         df = audio2mfcc_df(signal, samplerate, config)
-        df.to_pickle(file_cache)
+        df.to_pickle(cache_path)
 
     if config.audio_processing['use_temp_derrivatives']:
         df = df.join(df.diff().fillna(0), rsuffix='_d')
 
     df.index = df.index + config.audio_processing['time_shift']
 
-    flatten = np.split(df.to_numpy().flatten(), len(df.index))
+    flatten = np.split(df.to_numpy().astype('float16').flatten(), len(df.index))
     return pd.DataFrame(data={'mfcc': flatten},
-                        index=df.index, )
-
-
-def get_mfcc(
-        signal: np.ndarray,
-        sampling_frequency: int,
-        frame_length=0.020,
-        frame_stride=0.01,
-        num_cepstral=13,
-        num_filters=40,
-        fft_length=512) -> np.ndarray:
-    """
-    Compatibility wrapper for Sonopy / Soundpy
-    :param signal:
-    :param sampling_frequency: in Hz
-    :param frame_length: in seconds
-    :param frame_stride: in seconds
-    :param num_cepstral:
-    :param num_filters:
-    :param fft_length:
-    :return: power log + MFCC
-    """
-
-    mfcc = speechpy.feature.mfcc(signal,
-                                 sampling_frequency=sampling_frequency,
-                                 frame_length=config.audio_processing['frame_length'],
-                                 frame_stride=config.audio_processing['frame_stride'],
-                                 num_filters=40,
-                                 fft_length=512,
-                                 low_frequency=0,
-                                 num_cepstral=13)
-    # Normalize
-    mfcc_cmvn = speechpy.processing.cmvnw(mfcc, win_size=301, variance_normalization=True)
-
-    return sonopy.mfcc_spec(signal,
-                            sample_rate=sampling_frequency,
-                            window_stride=(int(frame_length * 1000),
-                                           int(frame_stride * 1000)),
-                            fft_size=fft_length,
-                            num_filt=num_filters,
-                            num_coeffs=num_cepstral + 1,  # first dimension will be used for power log
-                            return_parts=False)
+                        index=df.index)
 
 
 def audio2mfcc_df(signal: np.ndarray, samplerate: int, config: Config) -> pd.DataFrame:
     if len(signal) > config.audio_processing['signal_max_length']:
         raise ValueError('[process|audio] Signal longer than set maximum')
+
     # Stereo to mono
     if signal.shape[1] == 2:
         signal = (signal[:, 0] + signal[:, 1]) / 2
@@ -376,7 +347,47 @@ def audio2mfcc_df(signal: np.ndarray, samplerate: int, config: Config) -> pd.Dat
     index = np.arange(0,
                       (len(mfcc) - 0.5) * config.audio_processing['frame_stride'],
                       config.audio_processing['frame_stride']) + config.audio_processing['frame_length']
-    return pd.DataFrame(data=mfcc, index=index)
+    return pd.DataFrame(data=mfcc, index=index, dtype='float16')
+
+
+def init_worker():
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+
+
+def create_ogg_cache(ogg_path, config: Config, order=(0, 1)):
+    progress(*order, config=config, name='Recalculating MFCCs')
+    try:
+        path2mfcc_df(ogg_path, config=config)
+    except ValueError as e:
+        print(f'\tSkipped file {ogg_path} \n\t\t{e}', file=stderr)
+
+
+def create_ogg_caches(ogg_paths, config: Config):
+    total = len(ogg_paths)
+    inputs = ((s, config, (i, total)) for i, s in enumerate(ogg_paths))
+    pool = Pool(initializer=init_worker())
+    pool.starmap(create_ogg_cache, inputs)
+    # res.get(10)
+    pool.close()
+    pool.join()
+
+
+def remove_ogg_cache(ogg_paths):
+    for i, ogg_path in enumerate(ogg_paths):
+        cache_path = f'{".".join(ogg_path.split(".")[:-1])}.pkl'
+        if os.path.exists(cache_path):
+            os.remove(cache_path)
+
+
+def create_ogg_paths(song_folders):
+    ogg_paths = []
+    for folder in song_folders:
+        files = []
+        for dirpath, dirnames, filenames in os.walk(folder):
+            files.extend(filenames)
+            break
+        ogg_paths.append(os.path.join(folder, [x for x in files if x.endswith('gg')][0]))
+    return ogg_paths
 
 
 if __name__ == '__main__':
@@ -395,3 +406,28 @@ if __name__ == '__main__':
     #               '../data/new_dataformat/3207/info.dat')
 
     print(df1)
+
+
+def generate_snippets(song_df: pd.DataFrame, config: Config):
+    stack = []
+    ln = len(song_df)
+    window = config.beat_preprocessing['snippet_window_length']
+    skip = config.beat_preprocessing['snippet_window_skip']
+
+    # Check if at least 1 window is possible
+    if ln < window:
+        return None
+
+    # Name and difficulty information is contained in the grouping operation
+    indexes_to_drop = ['name', 'difficulty']
+    song_df = song_df.reset_index(level=indexes_to_drop).drop(columns=indexes_to_drop)
+
+    for s in range(0, ln, skip):
+        # Make sure the dataset contains ends of the songs
+        if s + window > ln:
+            stack.append(song_df.iloc[-window:])
+        else:
+            stack.append(song_df.iloc[s:s + window])
+
+    df = pd.concat(stack, keys=list(range(0, len(song_df), skip)), names=['snippet', 'time'])
+    return df
