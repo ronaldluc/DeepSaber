@@ -1,28 +1,27 @@
 import pandas as pd
 
 from process.api import create_song_list, songs2dataset
-from process.compute import path2beat_df
-from utils.types import Config
+from utils.types import Config, Timer
 
 if __name__ == '__main__':
     song_folders = create_song_list('../data')
     total = len(song_folders)
-    val_split = int(total * 0.8)
-    test_split = int(total * 0.9)
 
-    # start = time()
-    # df = songs2dataset(song_folders[test_split:], config=Config())
-    # print(f'\n\nTook {time() - start}\n')
-    #
-    # df.to_pickle(result_path)
-    # print(df)
-    #
-    # df = songs2dataset(song_folders[val_split:test_split], config=Config())
-    # result_path = '../data/val_plain_beatmaps.pkl'
-    # df.to_pickle(result_path)
-    # print(df)
+    config = Config()
+    config.audio_processing['use_cache'] = False
 
-    df = songs2dataset(song_folders[:val_split], config=Config())
-    result_path = '../data/train_plain_beatmaps.pkl'
-    df.to_pickle(result_path)
-    print(df)
+    timer = Timer()
+    for phase, split in zip(['train', 'val', 'test'],
+                            zip(config.training['data_split'],
+                                config.training['data_split'][1:])
+                            ):
+        split_from = int(total * split[0])
+        split_to = int(total * split[1])
+        result_path = f'../data/{phase}_beatmaps.pkl'
+
+        df = songs2dataset(song_folders[split_from:split_to], config=config)
+        timer(f'Created {phase} dataset')
+
+        df.to_pickle(result_path)
+        timer(f'Pickled {phase} dataset')
+

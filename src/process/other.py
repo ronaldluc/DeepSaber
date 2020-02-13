@@ -1,5 +1,9 @@
+import random
+
 from process.api import df2beatmap
-from process.compute import beatmap2beat_df, path2beat_df
+from process.compute import beatmap2beat_df, path2beat_df, process_song_folder
+from utils.functions import check_consistency
+from utils.types import Config
 
 
 def check_identity(df1):
@@ -25,6 +29,14 @@ def sanity_check():
     df1 = path2beat_df('../data/new_dataformat/3aa4/ExpertPlus.dat',
                   '../data/new_dataformat/3aa4/info.dat')
     check_identity(df1)
+
+    config = Config()
+    # config.audio_processing['use_cache'] = False
+    df1 = process_song_folder('../data/new_dataformat/3207', config=config)
+
+    print(check_consistency(df1))
+    df1['l_lineLayer'] = df1['l_lineLayer'].map(lambda x: [0.0] * random.randint(3, 5))
+    print(check_consistency(df1))
 
 
 if __name__ == '__main__':

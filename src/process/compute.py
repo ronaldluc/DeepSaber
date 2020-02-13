@@ -1,5 +1,6 @@
 import json
 import os
+import random
 from sys import stderr
 from time import sleep
 from typing import Union, Mapping, List
@@ -12,7 +13,7 @@ import speechpy
 import tensorflow as tf
 import numba
 
-from utils.functions import progress
+from utils.functions import progress, check_consistency
 from utils.types import Config, Timer
 
 JSON = Union[str, int, float, bool, None, Mapping[str, 'JSON'], List['JSON']]
@@ -152,7 +153,7 @@ def create_info(bpm):
 def beatmap2beat_df(beatmap: JSON, info: JSON) -> pd.DataFrame:
     # Load notes
     df = pd.DataFrame(
-        (x for x in beatmap['_notes'] if '_time' in x),  # TODO: Remove
+        (x for x in beatmap['_notes'] if '_time' in x),
         columns=['_time', '_type', '_lineLayer', '_lineIndex', '_cutDirection', ]
     ).sort_values('_time')
 
@@ -211,7 +212,6 @@ def path2beat_df(beatmap_path, info_path) -> pd.DataFrame:
 
 def process_song_folder(folder, config: Config, order=(0, 1)):
     progress(*order, config=config, name='Processing song folders')
-    print(folder)
 
     files = []
     for dirpath, dirnames, filenames in os.walk(folder):
@@ -234,11 +234,9 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
             try:
                 beatmap_path = os.path.join(folder, beatmap_path[0])
                 df = path2beat_df(beatmap_path, info_path)
-                df = join_closest_index(df, mfcc_df)
-
-                df['difficulty'] = difficulty
-                df['name'] = folder_name
-                df = df.set_index(['name', 'difficulty'], append=True).reorder_levels(['name', 'difficulty', 'time'])
+                df = join_closest_index(df, mfcc_df, 'mfcc')
+                df = add_previous_prediction(df, config)
+                df = add_multiindex(df, difficulty, folder_name)
 
                 df_difficulties.append(df)
             except (IndexError, KeyError, UnicodeDecodeError) as e:
@@ -249,11 +247,24 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
     return None
 
 
-def join_closest_index(df: pd.DataFrame, other: pd.DataFrame) -> pd.DataFrame:
+def add_multiindex(df, difficulty, folder_name):
+    df['difficulty'] = difficulty
+    df['name'] = folder_name
+    df = df.set_index(['name', 'difficulty'], append=True).reorder_levels(['name', 'difficulty', 'time'])
+    return df
+
+
+def add_previous_prediction(df, config: Config):
+    df[config.dataset['beat_elements_previous_prediction']] = df[config.dataset['beat_elements']].shift(1)
+    return df.dropna()
+
+
+def join_closest_index(df: pd.DataFrame, other: pd.DataFrame, other_name: str = 'other') -> pd.DataFrame:
     """
     Join `df` with the closest row (by index) of `other`
     :param df: index in time,
     :param other: index in time, constant intervals
+    :param other_name: name of the joined columns
     :return: df
     """
     original_index = df.index
@@ -261,22 +272,42 @@ def join_closest_index(df: pd.DataFrame, other: pd.DataFrame) -> pd.DataFrame:
     df.index = np.floor(df.index / round_index).astype(int)
     other.index = (other.index / round_index).astype(int)
 
-    if not other.name:
-        other.name = 'other'
+    other.name = other_name
     df = df.join(other)
     df.index = original_index
     return df
 
 
+# def ald_path2mfcc_df(file_ogg, config: Config) -> pd.DataFrame:
+#     file_cache = f'{".".join(file_ogg.split(".")[:-1])}.pkl'
+#     if config.audio_processing['use_cache'] and os.path.exists(file_cache):
+#         return pd.read_pickle(file_cache)
+#
+#     signal, samplerate = sf.read(file_ogg)
+#     df = audio2mfcc_df(signal, samplerate, config)
+#     df.to_pickle(file_cache)
+#     return df
+
 def path2mfcc_df(file_ogg, config: Config) -> pd.DataFrame:
     file_cache = f'{".".join(file_ogg.split(".")[:-1])}.pkl'
-    if config.audio_processing['use_cache'] and os.path.exists(file_cache):
-        return pd.read_pickle(file_cache)
 
-    signal, samplerate = sf.read(file_ogg)
-    df = audio2mfcc_df(signal, samplerate, config)
-    df.to_pickle(file_cache)
-    return df
+    if config.audio_processing['use_cache'] and os.path.exists(file_cache):
+        df = pd.read_pickle(file_cache)
+    else:
+        if os.path.exists(file_cache):
+            os.remove(file_cache)
+        signal, samplerate = sf.read(file_ogg)
+        df = audio2mfcc_df(signal, samplerate, config)
+        df.to_pickle(file_cache)
+
+    if config.audio_processing['use_temp_derrivatives']:
+        df = df.join(df.diff().fillna(0), rsuffix='_d')
+
+    df.index = df.index + config.audio_processing['time_shift']
+
+    flatten = np.split(df.to_numpy().flatten(), len(df.index))
+    return pd.DataFrame(data={'mfcc': flatten},
+                        index=df.index, )
 
 
 def get_mfcc(
@@ -299,16 +330,16 @@ def get_mfcc(
     :return: power log + MFCC
     """
 
-    # mfcc = speechpy.feature.mfcc(signal,
-    #                              sampling_frequency=samplerate,
-    #                              frame_length=config.audio_processing['frame_length'],
-    #                              frame_stride=config.audio_processing['frame_stride'],
-    #                              num_filters=40,
-    #                              fft_length=512,
-    #                              low_frequency=0,
-    #                              num_cepstral=13)
-    # # Normalize
-    # mfcc_cmvn = speechpy.processing.cmvnw(mfcc, win_size=301, variance_normalization=True)
+    mfcc = speechpy.feature.mfcc(signal,
+                                 sampling_frequency=sampling_frequency,
+                                 frame_length=config.audio_processing['frame_length'],
+                                 frame_stride=config.audio_processing['frame_stride'],
+                                 num_filters=40,
+                                 fft_length=512,
+                                 low_frequency=0,
+                                 num_cepstral=13)
+    # Normalize
+    mfcc_cmvn = speechpy.processing.cmvnw(mfcc, win_size=301, variance_normalization=True)
 
     return sonopy.mfcc_spec(signal,
                             sample_rate=sampling_frequency,
@@ -316,7 +347,7 @@ def get_mfcc(
                                            int(frame_stride * 1000)),
                             fft_size=fft_length,
                             num_filt=num_filters,
-                            num_coeffs=num_cepstral,
+                            num_coeffs=num_cepstral + 1,  # first dimension will be used for power log
                             return_parts=False)
 
 
@@ -333,32 +364,28 @@ def audio2mfcc_df(signal: np.ndarray, samplerate: int, config: Config) -> pd.Dat
     # signal_preemphasized = speechpy.processing.preemphasis(signal, cof=0.98)  # TODO: should be used?
 
     # Extract MFCC features
-    mfcc = get_mfcc(signal,
-                    sampling_frequency=samplerate,
-                    frame_length=config.audio_processing['frame_length'],
-                    frame_stride=config.audio_processing['frame_stride'],
-                    num_filters=40,
-                    fft_length=512,
-                    num_cepstral=13)
+    mfcc = speechpy.feature.mfcc(signal,
+                                 sampling_frequency=samplerate,
+                                 frame_length=config.audio_processing['frame_length'],
+                                 frame_stride=config.audio_processing['frame_stride'],
+                                 num_filters=40,
+                                 fft_length=512,
+                                 num_cepstral=config.audio_processing['num_cepstral'])
 
     # Compute the time index
     index = np.arange(0,
                       (len(mfcc) - 0.5) * config.audio_processing['frame_stride'],
                       config.audio_processing['frame_stride']) + config.audio_processing['frame_length']
-    df = pd.DataFrame(data=mfcc, index=index)
-
-    if config.audio_processing['use_temp_derrivatives']:
-        df = df.join(df.diff().fillna(0), rsuffix='_d')
-
-    df.name = 'mfcc'
-    return df.apply(np.array, axis=1)
+    return pd.DataFrame(data=mfcc, index=index)
 
 
 if __name__ == '__main__':
     # TODO: Does not work on files with BMP changes
     config = Config()
-    config.audio_processing['use_cache'] = False
+    # config.audio_processing['use_cache'] = False
     df1 = process_song_folder('../data/new_dataformat/3207', config=config)
+    print(df1.columns)
+
     df1 = process_song_folder('../data/new_dataformat/3db2', config=config)
     # df1 = path2beat_df('../data/new_dataformat/4b58/ExpertPlus.dat',
     #                    '../data/new_dataformat/4b58/info.dat')

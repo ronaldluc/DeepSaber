@@ -73,8 +73,8 @@ def songs2dataset(song_folders, config: Config):
 def generate_snippets(song_df: pd.DataFrame, config: Config):
     stack = []
     ln = len(song_df)
-    window = config.preprocessing['snippet_window_length']
-    skip = config.preprocessing['snippet_window_skip']
+    window = config.beat_preprocessing['snippet_window_length']
+    skip = config.beat_preprocessing['snippet_window_skip']
 
     # Check if at least 1 window is possible
     if ln < window:
