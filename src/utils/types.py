@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 from time import time
 
 
@@ -24,13 +25,24 @@ class Config:
                           'r_lineLayer', 'r_lineIndex', 'r_cutDirection', ],
     }
     dataset = {
+        'storage_folder': Path('../data/debug_datasets'),
+        'num_classes':  {'difficulty': 5,   # ending of the column name: number of classes
+                         '_lineLayer': 3, '_lineIndex': 4, '_cutDirection': 9},
+        'difficulty_mapping': {d: enum for enum, d in enumerate(['Easy', 'Normal', 'Hard', 'Expert', 'ExpertPlus'])},
+
+        # dataset groups
         'beat_elements': beat_preprocessing['beat_elements'],
-        'beat_elements_previous_prediction': [f'{x}_prev' for x in beat_preprocessing['beat_elements']],
+        'beat_elements_previous_prediction': [f'prev_{x}' for x in beat_preprocessing['beat_elements']],
+        'categorical': ['difficulty'],
         'audio': ['mfcc', ],
-        'regression': ['prev', 'next', 'part', ]
+        'regression': ['prev', 'next', 'part', ],
     }
     training = {
         'data_split': [0.0, 0.8, 0.9, 0.99, ],
+        'batch_size': 8,
+        'use_difficulties': ['Normal', 'Hard', 'Expert'],
+        'categorical': ['beat_elements', 'beat_elements_previous_prediction', 'categorical'],   # in dataset groups
+        'regression': ['audio', 'regression'],      # in dataset groups
     }
 
 

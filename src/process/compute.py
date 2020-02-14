@@ -21,21 +21,6 @@ from utils.types import Config, Timer
 JSON = Union[str, int, float, bool, None, Mapping[str, 'JSON'], List['JSON']]
 
 
-def to_categorical(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Turn beat elements dimensions into one-hot-encoding
-    :param df: beat elements
-    :return: updated beat elements
-    """
-    dim_max = {'_lineLayer': 3, '_lineIndex': 4, '_cutDirection': 9}
-    for col, dim in dim_max.items():
-        # df[col] = tf.keras.utils.to_categorical(df[col], dim).tolist()
-        num = tf.keras.utils.to_categorical(df[col], dim, dtype=np.int8)
-        flatten = np.split(num.flatten(), len(df.index))
-        df[col] = flatten
-    return df
-
-
 def one_beat_element_per_hand(df: pd.DataFrame) -> pd.Series:
     """
 
