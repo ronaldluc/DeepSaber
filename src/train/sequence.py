@@ -3,6 +3,7 @@ import pandas as pd
 from tensorflow.keras.utils import Sequence
 from tensorflow import keras
 
+from train.compute import add_difficulty
 from utils.types import Config
 
 
@@ -19,35 +20,46 @@ class OnEpochEnd(keras.callbacks.Callback):
 class BeatmapSequence(Sequence):
 
     def __init__(self, df: pd.DataFrame, config: Config):
-        df = df.reset_index('difficulty')
-        df = df[df['difficulty'].isin(config.training['use_difficulties'])]
-        df['difficulty'] = df['difficulty'].replace(config.dataset['difficulty_mapping'])
+        df = add_difficulty(df, config)
 
         self.df = df
         self.batch_size = config.training['batch_size']
         self.snippet_size = config.beat_preprocessing['snippet_window_length']
 
-        self.data = {col: np.array(df[col]
-                                   .to_numpy()
-                                   .reshape((len(df) // self.snippet_size, self.snippet_size))
-                                   .tolist())
-                     for col in df.columns}
-        self.categorical_cols = sum([config.dataset[name] for name in config.training['categorical']], [])
-        self.regression_cols = sum([config.dataset[name] for name in config.training['regression']], [])
-
-        for col in self.categorical_cols:
-            num_classes = [num for ending, num in config.dataset['num_classes'].items() if col.endswith(ending)][0]
-            self.data[col] = keras.utils.to_categorical(self.data[col], num_classes, dtype='float32')
-        pass
+        self.init_data(df, config)
 
     def __len__(self):
         return int(np.ceil(len(self.df) / float(self.batch_size) / float(self.snippet_size)))
 
     def __getitem__(self, idx):
         x = {}
-        for col in
-        batch_x = self.x[idx * self.batch_size:(idx + 1) * self.batch_size]
-        batch_y = self.y[idx * self.batch_size:(idx + 1) * self.batch_size]
-        start = 0
+        for col in self.x_cols:
+            x[col] = self.data[col][idx * self.batch_size:(idx + 1) * self.batch_size]
+        y = {}
+        for col in self.y_cols:
+            y[col] = self.data[col][idx * self.batch_size:(idx + 1) * self.batch_size]
 
-        return None
+        return x, y
+
+    def on_epoch_end(self):
+        pass
+
+    def init_data(self, df: pd.DataFrame, config: Config):
+        self.data = {col: np.array(df[col]
+                                   .to_numpy()
+                                   .reshape((len(df) // self.snippet_size, self.snippet_size))
+                                   .tolist())
+                     for col in df.columns}
+
+        for col in df.columns:
+            if len(self.data[col].shape) < 3:
+                self.data[col] = self.data[col].reshape((len(df) // self.snippet_size, self.snippet_size, 1))
+
+        self.categorical_cols = set(sum([list(config.dataset[name]) for name in config.training['categorical_groups']], []))
+        self.regression_cols = set(sum([list(config.dataset[name]) for name in config.training['regression_groups']], []))
+        self.x_cols = set(sum([list(config.dataset[name]) for name in config.training['x_groups']], []))
+        self.y_cols = set(sum([list(config.dataset[name]) for name in config.training['y_groups']], []))
+
+        for col in self.categorical_cols:
+            num_classes = [num for ending, num in config.dataset['num_classes'].items() if col.endswith(ending)][0]
+            self.data[col] = keras.utils.to_categorical(self.data[col], num_classes, dtype='float32')

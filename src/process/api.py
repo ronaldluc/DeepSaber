@@ -66,6 +66,7 @@ def songs2dataset(song_folders, config: Config) -> pd.DataFrame:
 
     pool = multiprocessing.Pool()
     folders_to_process = len(song_folders)
+
     inputs = ((s, config, (i, folders_to_process)) for i, s in enumerate(song_folders))
     songs = pool.starmap(process_song_folder, inputs)
     # songs = map(lambda x: process_song_folder(*x), inputs)

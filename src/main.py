@@ -1,8 +1,10 @@
 import os
+import pickle
 from typing import Tuple
 
 import numpy as np
 import pandas as pd
+from tensorflow import keras
 
 from process.api import create_song_list, songs2dataset
 from train.model import create_model
@@ -34,7 +36,8 @@ def generate_datasets(config: Config):
 
 
 def load_datasets(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    return [pd.read_pickle(os.path.join(config.dataset['storage_folder'], f'{phase}_beatmaps.pkl')) for phase in ['train', 'val', 'test']]
+    return [pd.read_pickle(os.path.join(config.dataset['storage_folder'], f'{phase}_beatmaps.pkl')) for phase in
+            ['train', 'val', 'test']]
 
 
 def dataset_stats(df: pd.DataFrame):
@@ -57,7 +60,7 @@ def create_training_data(X, groupby, config: Config):
 
 
 if __name__ == '__main__':
-    song_folders = create_song_list('../data')[:100]
+    song_folders = create_song_list('../data')
     total = len(song_folders)
 
     config = Config()
@@ -71,7 +74,17 @@ if __name__ == '__main__':
     train_seq = BeatmapSequence(train, config)
     val_seq = BeatmapSequence(val, config)
 
-    model = create_model(train, config)
+    model = create_model(train_seq, config)
 
-    model.fit(train_seq, validation_data=val_seq, callbacks=[OnEpochEnd([train_seq])])
+    logdir = 'logdir'
+    tensorboard_callback = keras.callbacks.TensorBoard(logdir, histogram_freq=1)
+    reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', min_delta=0.2, factor=0.1, patience=4, min_lr=0.001)
+    early_stop = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.02, patience=5, verbose=0, mode='auto',
+                                               baseline=None, restore_best_weights=False)
 
+    callbacks = [tensorboard_callback, reduce_lr, early_stop, OnEpochEnd([train_seq])]
+
+    model.fit(train_seq,
+              validation_data=val_seq,
+              callbacks=callbacks,
+              epochs=14)

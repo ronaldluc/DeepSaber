@@ -140,7 +140,7 @@ def create_info(bpm):
     return info
 
 
-def beatmap2beat_df(beatmap: JSON, info: JSON) -> pd.DataFrame:
+def beatmap2beat_df(beatmap: JSON, info: JSON, config: Config) -> pd.DataFrame:
     # Load notes
     df = pd.DataFrame(
         (x for x in beatmap['_notes'] if '_time' in x),
@@ -165,11 +165,22 @@ def beatmap2beat_df(beatmap: JSON, info: JSON) -> pd.DataFrame:
 
     out_df = merge_beat_elements(df)
 
+    check_column_ranges(out_df, config)
+
     out_df = compute_time_cols(out_df)
 
     out_df.index = out_df.index.rename('time')
 
     return out_df
+
+
+def check_column_ranges(out_df, config):
+    for col in config.beat_preprocessing['beat_elements']:
+        minimum, maximum = out_df[col].min(), out_df[col].max()
+        num_classes = [num for ending, num in config.dataset['num_classes'].items() if col.endswith(ending)][0] - 1
+        if minimum < 0 or num_classes < maximum:
+            raise ValueError(
+                f'[process|compute] column {col} with range <{minimum}, {maximum}> outside range <0, {num_classes}>')
 
 
 def merge_beat_elements(df: pd.DataFrame):
@@ -191,14 +202,14 @@ def merge_beat_elements(df: pd.DataFrame):
     return out_df
 
 
-def path2beat_df(beatmap_path, info_path) -> pd.DataFrame:
+def path2beat_df(beatmap_path, info_path, config: Config) -> pd.DataFrame:
     with open(info_path) as info_data:
         info = json.load(info_data)
         if 'beatsPerMinute' in info:
             info['_beatsPerMinute'] = info['beatsPerMinute']
     with open(beatmap_path) as beatmap_data:
         beatmap = json.load(beatmap_data)
-        return beatmap2beat_df(beatmap, info)
+        return beatmap2beat_df(beatmap, info, config)
 
 
 def process_song_folder(folder, config: Config, order=(0, 1)):
@@ -236,13 +247,13 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
         if beatmap_path:
             try:
                 beatmap_path = os.path.join(folder, beatmap_path[0])
-                df = path2beat_df(beatmap_path, info_path)
+                df = path2beat_df(beatmap_path, info_path, config)
                 df = join_closest_index(df, mfcc_df, 'mfcc')
                 df = add_previous_prediction(df, config)
                 df = add_multiindex(df, difficulty, folder_name)
 
                 df_difficulties.append(df)
-            except (IndexError, KeyError, UnicodeDecodeError) as e:
+            except (ValueError, IndexError, KeyError, UnicodeDecodeError) as e:
                 print(f'\n\tSkipped file {folder_name}/{difficulty}  |  {folder}:\n\t\t{e}', file=stderr)
 
     if df_difficulties:
