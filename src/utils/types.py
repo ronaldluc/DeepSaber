@@ -7,7 +7,7 @@ from time import time
 class Config:
     audio_processing = {
         'num_cepstral': 13,
-        'frame_length': 0.020,  # in seconds
+        'frame_length': 0.010,  # in seconds
         'frame_stride': 0.010,  # in seconds
         'time_shift': -0.0,  # in seconds
         'use_temp_derrivatives': True,
@@ -41,7 +41,7 @@ class Config:
         'data_split': (0.0, 0.8, 0.9, 0.99, ),
         'batch_size': 32,
         'use_difficulties': ['Normal', 'Hard', 'Expert'],
-        'categorical_groups': ['beat_elements', 'beat_elements_previous_prediction', 'categorical'],   # in dataset groups
+        'categorical_groups': ['beat_elements', 'beat_elements_previous_prediction', 'categorical'],  # in dataset groups
         'regression_groups': ['audio', 'regression'],      # in dataset groups
         'x_groups': ['beat_elements_previous_prediction', 'categorical', 'audio', 'regression'],
         'y_groups': ['beat_elements'],

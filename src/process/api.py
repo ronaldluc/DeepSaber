@@ -4,9 +4,12 @@ from typing import Tuple
 
 import numpy as np
 import pandas as pd
+from tensorflow.keras.models import Model
 
 from process.compute import JSON, create_info, process_song_folder, create_ogg_caches, remove_ogg_cache, \
     create_ogg_paths, generate_snippets
+from train.model import create_model
+from train.sequence import BeatmapSequence
 from utils.types import Config, Timer
 
 
@@ -85,6 +88,7 @@ def songs2dataset(song_folders, config: Config) -> pd.DataFrame:
     df = df.groupby(['name', 'difficulty']).apply(lambda x: generate_snippets(x, config=Config()))
     timer('Snippets generated')
     return df
+
 
 
 if __name__ == '__main__':

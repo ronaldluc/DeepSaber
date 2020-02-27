@@ -42,18 +42,20 @@ class BeatmapSequence(Sequence):
         return x, y
 
     def on_epoch_end(self):
+        # self.data[' ']
         pass
 
     def init_data(self, df: pd.DataFrame, config: Config):
+        shape = max(1, len(df) // self.snippet_size), min(len(df), self.snippet_size)
         self.data = {col: np.array(df[col]
                                    .to_numpy()
-                                   .reshape((len(df) // self.snippet_size, self.snippet_size))
+                                   .reshape(shape)
                                    .tolist())
                      for col in df.columns}
 
         for col in df.columns:
             if len(self.data[col].shape) < 3:
-                self.data[col] = self.data[col].reshape((len(df) // self.snippet_size, self.snippet_size, 1))
+                self.data[col] = self.data[col].reshape(*shape, 1)
 
         self.categorical_cols = set(sum([list(config.dataset[name]) for name in config.training['categorical_groups']], []))
         self.regression_cols = set(sum([list(config.dataset[name]) for name in config.training['regression_groups']], []))

@@ -6,7 +6,10 @@ import numpy as np
 import pandas as pd
 from tensorflow import keras
 
+from predict.api import create_beat_map
 from process.api import create_song_list, songs2dataset
+from process.compute import process_song_folder
+from train.callbacks import create_callbacks
 from train.model import create_model
 from train.sequence import BeatmapSequence, OnEpochEnd
 from utils.functions import check_consistency
@@ -62,6 +65,7 @@ def create_training_data(X, groupby, config: Config):
 if __name__ == '__main__':
     song_folders = create_song_list('../data')
     total = len(song_folders)
+    print(f'Found {total} folders')
 
     config = Config()
     # config.audio_processing['use_cache'] = False
@@ -69,22 +73,26 @@ if __name__ == '__main__':
     # generate_datasets(config)
 
     train, val, test = load_datasets(config)
-    # dataset_stats(train)
+    dataset_stats(train)
 
     train_seq = BeatmapSequence(train, config)
     val_seq = BeatmapSequence(val, config)
+    test_seq = BeatmapSequence(test, config)
 
-    model = create_model(train_seq, config)
+    model = create_model(train_seq, False, config)
 
-    logdir = 'logdir'
-    tensorboard_callback = keras.callbacks.TensorBoard(logdir, histogram_freq=1)
-    reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', min_delta=0.2, factor=0.1, patience=4, min_lr=0.001)
-    early_stop = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.02, patience=5, verbose=0, mode='auto',
-                                               baseline=None, restore_best_weights=False)
+    callbacks = create_callbacks(train_seq, config)
 
-    callbacks = [tensorboard_callback, reduce_lr, early_stop, OnEpochEnd([train_seq])]
-
+    timer = Timer()
     model.fit(train_seq,
               validation_data=val_seq,
               callbacks=callbacks,
-              epochs=14)
+              epochs=1)
+    timer('Training ')
+
+    # print('Evaluation')
+
+    gen_new_beat_map_path = song_folders[-2]
+    gen_new_beat_map_path = '../data/new_dataformat/4ede/'
+    #
+    create_beat_map(model, gen_new_beat_map_path, config)
