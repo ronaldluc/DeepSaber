@@ -16,9 +16,8 @@ import tensorflow as tf
 import numba
 
 from utils.functions import progress, check_consistency
-from utils.types import Config, Timer
+from utils.types import Config, Timer, JSON
 
-JSON = Union[str, int, float, bool, None, Mapping[str, 'JSON'], List['JSON']]
 
 
 def one_beat_element_per_hand(df: pd.DataFrame) -> pd.Series:
@@ -115,29 +114,6 @@ def create_bpm_df(beatmap: JSON) -> pd.DataFrame:
                                ignore_index=True)
 
     return bpm_df.loc[bpm_df['_value'] >= 30]  # BPM can't be zero
-
-
-def create_info(bpm):
-    info = {
-        "_version": "2.0.0",
-        "_songName": "unknown",
-        "_songSubName": "",
-        "_songAuthorName": "unknown",
-        "_levelAuthorName": "DeepSaber",
-        "_beatsPerMinute": bpm,
-        "_songTimeOffset": 0,
-        "_shuffle": 0,
-        "_shufflePeriod": 0.5,
-        "_previewStartTime": 58.67857360839844,
-        "_previewDuration": 10,
-        "_environmentName": "BigMirrorEnvironment",
-        "_customData": {
-            "_contributors": [],
-            "_customEnvironment": "",
-            "_customEnvironmentHash": ""
-        }
-    }
-    return info
 
 
 def beatmap2beat_df(beatmap: JSON, info: JSON, config: Config) -> pd.DataFrame:

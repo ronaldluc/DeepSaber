@@ -24,6 +24,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     x = layers.concatenate(inputs=inputs_list, axis=-1)
     # x = layers.LSTM(1024, return_sequences=True)(x)
     x = layers.LSTM(32, return_sequences=True, stateful=stateful)(x)
+    x = layers.LSTM(32, return_sequences=True, stateful=stateful)(x)
     # x = layers.LSTM(64, return_sequences=True)(x)
     # x = layers.LSTM(256, return_sequences=True)(x)
     # x = layers.LSTM(64)(x)

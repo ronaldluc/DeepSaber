@@ -50,7 +50,7 @@ class BeatmapSequence(Sequence):
         self.data = {col: np.array(df[col]
                                    .to_numpy()
                                    .reshape(shape)
-                                   .tolist())
+                                   .tolist(), dtype=np.float_)
                      for col in df.columns}
 
         for col in df.columns:
@@ -64,4 +64,4 @@ class BeatmapSequence(Sequence):
 
         for col in self.categorical_cols:
             num_classes = [num for ending, num in config.dataset['num_classes'].items() if col.endswith(ending)][0]
-            self.data[col] = keras.utils.to_categorical(self.data[col], num_classes, dtype='float32')
+            self.data[col] = keras.utils.to_categorical(self.data[col], num_classes, dtype=np.float_)

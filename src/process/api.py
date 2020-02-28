@@ -6,36 +6,11 @@ import numpy as np
 import pandas as pd
 from tensorflow.keras.models import Model
 
-from process.compute import JSON, create_info, process_song_folder, create_ogg_caches, remove_ogg_cache, \
+from process.compute import JSON, process_song_folder, create_ogg_caches, remove_ogg_cache, \
     create_ogg_paths, generate_snippets
 from train.model import create_model
 from train.sequence import BeatmapSequence
 from utils.types import Config, Timer
-
-
-def df2beatmap(df: pd.DataFrame, bpm: int = 60, events: Tuple = ()) -> Tuple[JSON, JSON]:
-    beatmap = {
-        '_notes': [],
-        '_events': events,
-    }
-
-    for type_num, hand in [[0, 'l'], [1, 'r']]:
-        cols = [x for x in df.columns if x[0] == hand]
-
-        df_t = pd.DataFrame()
-        df_t['_time'] = df.index
-        df_t['_type'] = type_num
-
-        for col in cols:
-            df_t[col] = np.argmax(np.array(df[col].to_list()), axis=1)
-
-        df_t = df_t.rename(columns={x: x[1:] for x in cols})
-
-        beatmap['_notes'] += df_t.to_dict('records')
-
-    info = create_info(bpm)
-
-    return beatmap, info
 
 
 def create_song_list(path):
@@ -88,7 +63,6 @@ def songs2dataset(song_folders, config: Config) -> pd.DataFrame:
     df = df.groupby(['name', 'difficulty']).apply(lambda x: generate_snippets(x, config=Config()))
     timer('Snippets generated')
     return df
-
 
 
 if __name__ == '__main__':
