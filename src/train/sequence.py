@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
-from tensorflow.keras.utils import Sequence
 from tensorflow import keras
+from tensorflow.keras.utils import Sequence
 
 from train.compute import add_difficulty
 from utils.types import Config
@@ -57,8 +57,10 @@ class BeatmapSequence(Sequence):
             if len(self.data[col].shape) < 3:
                 self.data[col] = self.data[col].reshape(*shape, 1)
 
-        self.categorical_cols = set(sum([list(config.dataset[name]) for name in config.training['categorical_groups']], []))
-        self.regression_cols = set(sum([list(config.dataset[name]) for name in config.training['regression_groups']], []))
+        self.categorical_cols = set(
+            sum([list(config.dataset[name]) for name in config.training['categorical_groups']], []))
+        self.regression_cols = set(
+            sum([list(config.dataset[name]) for name in config.training['regression_groups']], []))
         self.x_cols = set(sum([list(config.dataset[name]) for name in config.training['x_groups']], []))
         self.y_cols = set(sum([list(config.dataset[name]) for name in config.training['y_groups']], []))
 

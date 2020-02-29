@@ -42,7 +42,7 @@ class Config:
     }
     training = {
         'data_split': (0.0, 0.8, 0.9, 0.99,),
-        'batch_size': 32,
+        'batch_size': 512,
         'use_difficulties': ['Normal', 'Hard', 'Expert'],
         'categorical_groups': ['beat_elements', 'beat_elements_previous_prediction', 'categorical'],
         # in dataset groups

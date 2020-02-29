@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from tensorflow.keras.models import Model
 
-from predict.compute import create_info, generate_beatmap
+from predict.compute import generate_beatmap
 from process.compute import process_song_folder
 from train.model import create_model
 from train.sequence import BeatmapSequence
@@ -20,6 +20,7 @@ def create_beatmap_df(model: Model, path: Path, config: Config) -> pd.DataFrame:
     config.training['batch_size'] = 1
     seq = BeatmapSequence(df, config)
 
+    # stateful_model = model
     stateful_model = create_model(seq, True, config)
 
     stateful_model.set_weights(model.get_weights())
@@ -79,20 +80,20 @@ def df2beatmap(df: pd.DataFrame, config: Config, bpm: int = 60, events: Tuple = 
     return beatmap
 
 
-if __name__ == '__main__':
-    gen_new_beat_map_path = '../data/new_dataformat/4ede/'
-    config = Config()
-    #
-    # df1 = songs2dataset([gen_new_beat_map_path, ], config)
-    #
-    # df2 = process_song_folder(gen_new_beat_map_path, config)
-    # config.beat_preprocessing['snippet_window_length'] = len(df2)
-    #
-    # seq = BeatmapSequence(df2, config)
-    # # ['name', 'difficulty', 'snippet', 'time']
-    # print('done')
-
-    path = '../data/temp/beatmap_df.pkl'
-    df = pd.read_pickle(path)
-    df2beatmap(df, config)
-    print(df)
+# if __name__ == '__main__':
+#     gen_new_beat_map_path = '../data/new_dataformat/4ede/'
+#     config = Config()
+#     #
+#     # df1 = songs2dataset([gen_new_beat_map_path, ], config)
+#     #
+#     # df2 = process_song_folder(gen_new_beat_map_path, config)
+#     # config.beat_preprocessing['snippet_window_length'] = len(df2)
+#     #
+#     # seq = BeatmapSequence(df2, config)
+#     # # ['name', 'difficulty', 'snippet', 'time']
+#     # print('done')
+#
+#     path = '../data/temp/beatmap_df.pkl'
+#     df = pd.read_pickle(path)
+#     df2beatmap(df, config)
+#     print(df)

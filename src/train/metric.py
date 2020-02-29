@@ -1,7 +1,6 @@
-from train.sequence import BeatmapSequence, OnEpochEnd
-from utils.types import Config
 from tensorflow import keras as K
-import tensorflow as tf
+
+from utils.types import Config
 
 
 def create_metrics(config: Config):

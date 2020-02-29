@@ -1,23 +1,17 @@
 import json
 import os
-import random
 import signal
 from multiprocessing.pool import Pool
 from sys import stderr
-from time import sleep
-from typing import Union, Mapping, List
 
+import numba
 import numpy as np
 import pandas as pd
-import sonopy as sonopy
 import soundfile as sf
 import speechpy
-import tensorflow as tf
-import numba
 
-from utils.functions import progress, check_consistency
-from utils.types import Config, Timer, JSON
-
+from utils.functions import progress
+from utils.types import Config, JSON
 
 
 def one_beat_element_per_hand(df: pd.DataFrame) -> pd.Series:

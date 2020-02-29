@@ -23,11 +23,11 @@ def sanity_check():
     # Check whether the functions perform reverse operations
     print('\nTesting old format')
     df1 = path2beat_df('../data/old_dataformat/AMENOHOAKARI/ExpertPlus.json',
-                  '../data/old_dataformat/AMENOHOAKARI/info.json')
+                       '../data/old_dataformat/AMENOHOAKARI/info.json')
     check_identity(df1)
     print('\nTesting new format')
     df1 = path2beat_df('../data/new_dataformat/3aa4/ExpertPlus.dat',
-                  '../data/new_dataformat/3aa4/info.dat')
+                       '../data/new_dataformat/3aa4/info.dat')
     check_identity(df1)
 
     config = Config()
@@ -39,5 +39,5 @@ def sanity_check():
     print(check_consistency(df1))
 
 
-if __name__ == '__main__':
-    sanity_check()
+# if __name__ == '__main__':
+#     sanity_check()

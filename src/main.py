@@ -1,6 +1,4 @@
 import json
-import os
-import pickle
 from pathlib import Path
 from typing import Tuple
 
@@ -10,12 +8,12 @@ from tensorflow import keras
 
 from predict.api import create_beatmap_df, df2beatmap
 from process.api import create_song_list, songs2dataset
-from process.compute import process_song_folder
 from train.callbacks import create_callbacks
 from train.model import create_model
-from train.sequence import BeatmapSequence, OnEpochEnd
+from train.sequence import BeatmapSequence
 from utils.functions import check_consistency
 from utils.types import Config, Timer
+import os
 
 
 def generate_datasets(config: Config):
@@ -65,11 +63,13 @@ def create_training_data(X, groupby, config: Config):
 
 
 if __name__ == '__main__':
-    # song_folders = create_song_list('../data')
-    # total = len(song_folders)
-    # print(f'Found {total} folders')
+    base_folder = Path('../data')
+    song_folders = create_song_list(base_folder)
+    total = len(song_folders)
+    print(f'Found {total} folders')
     #
     config = Config()
+    config.dataset['storage_folder'] = base_folder/'full_datasets'
     # config.audio_processing['use_cache'] = False
 
     # generate_datasets(config)
@@ -85,33 +85,37 @@ if __name__ == '__main__':
 
     callbacks = create_callbacks(train_seq, config)
 
+    model_path = base_folder/'temp'
+    model_path.mkdir(parents=True, exist_ok=True)
+
     timer = Timer()
     # model.fit(train_seq,
     #           validation_data=val_seq,
     #           callbacks=callbacks,
-    #           epochs=16)
-    timer('Training ')
-    #
-    model.save('../data/temp/model.keras')
-    model = keras.models.load_model('../data/temp/model.keras')
+    #           epochs=100)
+    # timer('Training ')
+    # model.save(model_path / 'model.keras')
+
+    model = keras.models.load_model(model_path / 'model.keras')
     print('Evaluation')
 
     # gen_new_beat_map_path = song_folders[-2]
     # gen_new_beat_map_path = Path('../data/new_dataformat/4ede/')
-    gen_new_beat_map_path = Path('../data/testing/generation/')
-    gen_new_beat_map_path = Path('../data/testing/generation_normal/')
+    gen_new_beat_map_path = base_folder/'testing/generation/'
+    gen_new_beat_map_path = base_folder/'testing/generation_normal/'
     #
     beatmap_df = create_beatmap_df(model, gen_new_beat_map_path, config)
 
     beatmap = df2beatmap(beatmap_df, config)
 
-    gen_folder = gen_new_beat_map_path/'generated'
+    gen_folder = gen_new_beat_map_path / 'generated'
     gen_folder.mkdir(parents=True, exist_ok=True)
 
     difficulty = 'Hard'
-    with open(gen_folder/f'{difficulty}.dat', 'w') as f:
+
+    with open(gen_folder / f'{difficulty}.dat', 'w') as f:
         json.dump(beatmap, f)
-    with open(gen_new_beat_map_path/'info.dat', 'r') as f:
+    with open(gen_new_beat_map_path / 'info.dat', 'r') as f:
         info = json.load(f)
         difficulties = info['_difficultyBeatmapSets'][0]['_difficultyBeatmaps']
         info['_difficultyBeatmapSets'][0]['_difficultyBeatmaps'] = [x for x in difficulties

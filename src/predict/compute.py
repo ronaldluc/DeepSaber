@@ -70,7 +70,8 @@ def predictions2df(data, seq):
 # @numba.njit()
 def update_next(i, output_names, pred, data, most_recent):
     for col, val in zip(output_names, pred):
-        chose_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten())
+        val = val**2
+        chose_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten()/np.sum(val))
         one_hot = np.zeros_like(val)
         one_hot[:, :, chose_index] = 1
         data[col][:, i + 1] = one_hot
