@@ -38,6 +38,5 @@ def sanity_check():
     df1['l_lineLayer'] = df1['l_lineLayer'].map(lambda x: [0.0] * random.randint(3, 5))
     print(check_consistency(df1))
 
-
 # if __name__ == '__main__':
 #     sanity_check()

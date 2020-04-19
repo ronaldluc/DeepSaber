@@ -3,8 +3,8 @@ import os
 
 import pandas as pd
 
+from process.compute import create_ogg_paths, generate_snippets  # split needed for gColab upload
 from process.compute import process_song_folder, create_ogg_caches, remove_ogg_cache
-from process.compute import create_ogg_paths, generate_snippets     # split needed for gColab upload
 from utils.types import Config, Timer
 
 
@@ -58,7 +58,6 @@ def songs2dataset(song_folders, config: Config) -> pd.DataFrame:
     df = df.groupby(['name', 'difficulty']).apply(lambda x: generate_snippets(x, config=Config()))
     timer('Snippets generated')
     return df
-
 
 # if __name__ == '__main__':
 #     song_folders = create_song_list('../data')

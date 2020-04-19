@@ -1,3 +1,4 @@
+from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.models import Model
 
@@ -21,52 +22,46 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
                                                                        padding='causal')(inputs[col])
                                                          for s in [3, 5, 7]],
                                                  axis=-1)
+            per_stream[col] = inputs[col]
+            per_stream[col] = layers.BatchNormalization()(per_stream[col])
         if col in seq.regression_cols:
             shape = None, *seq.data[col].shape[2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
-            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=64 // (s - 2),
+            per_stream[col] = inputs[col]
+            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=128 // (s - 2),
                                                                        kernel_size=s,
                                                                        activation='relu',
                                                                        padding='causal')(inputs[col])
                                                          for s in [3, 5, 7]],
                                                  axis=-1)
+            # per_stream[col] = layers.BatchNormalization()(per_stream[col])
 
-    inputs_list = list(inputs.values())
     per_stream_list = list(per_stream.values())
     x = layers.concatenate(inputs=per_stream_list, axis=-1)
-    # x = layers.LSTM(1024, return_sequences=True)(x)
-    x = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
-                                                 kernel_size=s,
-                                                 activation='relu',
-                                                 padding='causal')(x)
-                                   for s in [3, 5, 7]],
-                           axis=-1)
-    # x = layers.TimeDistributed(layers.BatchNormalization())(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.LSTM(512, return_sequences=True, stateful=stateful)(x)
     x = layers.BatchNormalization()(x)
     x = layers.LSTM(256, return_sequences=True, stateful=stateful)(x)
-    x = layers.BatchNormalization()(x)
-    # x = layers.TimeDistributed(layers.BatchNormalization())(x)
-    x = layers.LSTM(64, return_sequences=True, stateful=stateful)(x)
-    x = layers.BatchNormalization()(x)
-    # x = layers.TimeDistributed(layers.BatchNormalization())(x)
-    # x = layers.LSTM(64, return_sequences=True)(x)
-    # x = layers.LSTM(256, return_sequences=True)(x)
-    # x = layers.LSTM(64)(x)
 
     outputs = {}
+    loss = {}
     for col in seq.y_cols:
         if col in seq.categorical_cols:
             shape = seq.data[col].shape[-1]
             outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation='softmax'), name=col)(x)
+            loss[col] = 'categorical_crossentropy'
         if col in seq.regression_cols:
             shape = seq.data[col].shape[-1]
             outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation='elu'), name=col)(x)
+            loss[col] = 'mae'
 
     model = Model(inputs=inputs, outputs=outputs)
 
+    optimizer = keras.optimizers.RMSprop(learning_rate=0.0001)
+    optimizer = keras.optimizers.Nadam(learning_rate=0.0005)
     model.compile(
-        optimizer='rmsprop',
-        loss='categorical_crossentropy',
+        optimizer=optimizer,
+        loss=loss,
         metrics=create_metrics(config)
     )
 

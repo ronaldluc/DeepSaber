@@ -197,7 +197,7 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
     """
     progress(*order, config=config, name='Processing song folders')
 
-    files = []
+    files = []  # TODO: Rewrit eto use Pathlib
     for dirpath, dirnames, filenames in os.walk(folder):
         files.extend(filenames)
         break
@@ -209,7 +209,7 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
     try:
         mfcc_df = path2mfcc_df(file_ogg, config=config)
     except (ValueError, FileNotFoundError) as e:
-        print(f'\n\tSkipped file {folder_name}  |  {folder}:\n\t\t{e}', file=stderr)
+        print(f'\n\t[process | process_song_folder] Skipped file {folder_name}  |  {folder}:\n\t\t{e}', file=stderr)
         return None
 
     for difficulty in ['Easy', 'Normal', 'Hard', 'Expert', 'ExpertPlus']:
@@ -224,7 +224,9 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
 
                 df_difficulties.append(df)
             except (ValueError, IndexError, KeyError, UnicodeDecodeError) as e:
-                print(f'\n\tSkipped file {folder_name}/{difficulty}  |  {folder}:\n\t\t{e}', file=stderr)
+                print(
+                    f'\n\t[process | process_song_folder] Skipped file {folder_name}/{difficulty}  |  {folder}:\n\t\t{e}',
+                    file=stderr)
 
     if df_difficulties:
         return pd.concat(df_difficulties)
@@ -258,6 +260,7 @@ def join_closest_index(df: pd.DataFrame, other: pd.DataFrame, other_name: str = 
     round_index = other.index.values[1] - other.index.values[0]
     df.index = np.floor(df.index / round_index).astype(int)
     other.index = (other.index / round_index).astype(int)
+    other = other.reset_index(drop=True)
 
     other.name = other_name
     df = df.join(other)
@@ -333,7 +336,6 @@ def create_ogg_caches(ogg_paths, config: Config):
     inputs = ((s, config, (i, total)) for i, s in enumerate(ogg_paths))
     pool = Pool(initializer=init_worker())
     pool.starmap(create_ogg_cache, inputs)
-    # res.get(10)
     pool.close()
     pool.join()
 
