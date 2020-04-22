@@ -100,9 +100,9 @@ def update_generated_metadata(gen_folder, beatmap_folder, config):
         info = json.load(rf)
         difficulties = info['_difficultyBeatmapSets'][0]['_difficultyBeatmaps']
         info['_difficultyBeatmapSets'][0]['_difficultyBeatmaps'] = [x for x in difficulties if x['_difficulty']
-                                                                    in config.training['use_difficulties']]
+                                                                    in config.training.use_difficulties]
         for not_generated in (x['_difficulty'] for x in difficulties
-                              if x['_difficulty'] not in config.training['use_difficulties']):
+                              if x['_difficulty'] not in config.training.use_difficulties):
             (gen_folder / not_generated).with_suffix('.dat').unlink()
         info['_beatsPerMinute'] = 60
 
@@ -126,13 +126,13 @@ def copy_folder_contents(in_folder, out_folder):
 def create_beatmap_dfs(stateful_model: Model, path: Path, config: Config) -> Dict[str, pd.DataFrame]:
     df = process_song_folder(str(path), config)
 
-    config.beat_preprocessing['snippet_window_length'] = len(df)
-    config.training['batch_size'] = 1
+    config.beat_preprocessing.snippet_window_length = len(df)
+    config.training.batch_size = 1
     # stateful_model = None
     output = {}
 
     for difficulty, sub_df in df.groupby('difficulty'):
-        if difficulty not in config.training['use_difficulties']:
+        if difficulty not in config.training.use_difficulties:
             continue
         print(f'\nGenerating {difficulty}')
         seq = BeatmapSequence(sub_df.copy(), config)
@@ -190,7 +190,7 @@ def df2beatmap(df: pd.DataFrame, config: Config, bpm: int = 60, events: Tuple = 
         '_events': events,
     }
 
-    plain_col_names = [x[2:] for x in config.dataset['beat_elements'] if x[0] is 'l' and 'cutDirection' not in x]
+    plain_col_names = [x[2:] for x in config.dataset.beat_elements if x[0] is 'l' and 'cutDirection' not in x]
     partially_equal_beat_elements = [df[f'l_{col}'].map(np.ndarray.argmax)
                                      == df[f'r_{col}'].map(np.ndarray.argmax)
                                      for col in plain_col_names]

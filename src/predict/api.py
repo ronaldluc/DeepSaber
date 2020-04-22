@@ -27,7 +27,7 @@ def generate_complete_beatmaps(beatmap_folder: Path, output_folder: Path, statef
 #     # df1 = songs2dataset([gen_new_beat_map_path, ], config)
 #     #
 #     # df2 = process_song_folder(gen_new_beat_map_path, config)
-#     # config.beat_preprocessing['snippet_window_length'] = len(df2)
+#     # config.beat_preprocessing.snippet_window_length = len(df2)
 #     #
 #     # seq = BeatmapSequence(df2, config)
 #     # # ['name', 'difficulty', 'snippet', 'time']

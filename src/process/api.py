@@ -23,7 +23,7 @@ def recalculate_mfcc_df_cache(song_folders, config: Config):
     MFCC computation is memory heavy.
     Therefore recalculation catches SIGTERM through `multiprocessing`
     """
-    if config.audio_processing['use_cache']:
+    if config.audio_processing.use_cache:
         return
 
     ogg_paths = create_ogg_paths(song_folders)

@@ -145,9 +145,9 @@ def beatmap2beat_df(beatmap: JSON, info: JSON, config: Config) -> pd.DataFrame:
 
 
 def check_column_ranges(out_df, config):
-    for col in config.beat_preprocessing['beat_elements']:
+    for col in config.beat_preprocessing.beat_elements:
         minimum, maximum = out_df[col].min(), out_df[col].max()
-        num_classes = [num for ending, num in config.dataset['num_classes'].items() if col.endswith(ending)][0] - 1
+        num_classes = [num for ending, num in config.dataset.num_classes.items() if col.endswith(ending)][0] - 1
         if minimum < 0 or num_classes < maximum:
             raise ValueError(
                 f'[process|compute] column {col} with range <{minimum}, {maximum}> outside range <0, {num_classes}>')
@@ -241,8 +241,8 @@ def add_multiindex(df, difficulty, folder_name):
 
 
 def add_previous_prediction(df: pd.DataFrame, config: Config):
-    prev_prediction = config.dataset['beat_elements_previous_prediction']
-    df[prev_prediction] = df[config.dataset['beat_elements']].shift(1)
+    prev_prediction = config.dataset.beat_elements_previous_prediction
+    df[prev_prediction] = df[config.dataset.beat_elements].shift(1)
     df = df.dropna().copy()
     df.loc[:, prev_prediction] = df[prev_prediction].astype('int8')
     return df
@@ -274,16 +274,16 @@ def path2mfcc_df(ogg_path, config: Config) -> pd.DataFrame:
     if os.path.exists(cache_path):
         df = pd.read_pickle(cache_path)
     else:
-        if config.audio_processing['use_cache']:
+        if config.audio_processing.use_cache:
             raise FileNotFoundError('Cache file not found')
         signal, samplerate = sf.read(ogg_path)
         df = audio2mfcc_df(signal, samplerate, config)
         df.to_pickle(cache_path)
 
-    if config.audio_processing['use_temp_derrivatives']:
+    if config.audio_processing.use_temp_derrivatives:
         df = df.join(df.diff().fillna(0), rsuffix='_d')
 
-    df.index = df.index + config.audio_processing['time_shift']
+    df.index = df.index + config.audio_processing.time_shift
 
     flatten = np.split(df.to_numpy().astype('float16').flatten(), len(df.index))
     return pd.DataFrame(data={'mfcc': flatten},
@@ -291,7 +291,7 @@ def path2mfcc_df(ogg_path, config: Config) -> pd.DataFrame:
 
 
 def audio2mfcc_df(signal: np.ndarray, samplerate: int, config: Config) -> pd.DataFrame:
-    if len(signal) > config.audio_processing['signal_max_length']:
+    if len(signal) > config.audio_processing.signal_max_length:
         raise ValueError('[process|audio] Signal longer than set maximum')
 
     # Stereo to mono
@@ -306,16 +306,16 @@ def audio2mfcc_df(signal: np.ndarray, samplerate: int, config: Config) -> pd.Dat
     # Extract MFCC features
     mfcc = speechpy.feature.mfcc(signal,
                                  sampling_frequency=samplerate,
-                                 frame_length=config.audio_processing['frame_length'],
-                                 frame_stride=config.audio_processing['frame_stride'],
+                                 frame_length=config.audio_processing.frame_length,
+                                 frame_stride=config.audio_processing.frame_stride,
                                  num_filters=40,
                                  fft_length=512,
-                                 num_cepstral=config.audio_processing['num_cepstral'])
+                                 num_cepstral=config.audio_processing.num_cepstral)
 
     # Compute the time index
     index = np.arange(0,
-                      (len(mfcc) - 0.5) * config.audio_processing['frame_stride'],
-                      config.audio_processing['frame_stride']) + config.audio_processing['frame_length']
+                      (len(mfcc) - 0.5) * config.audio_processing.frame_stride,
+                      config.audio_processing.frame_stride) + config.audio_processing.frame_length
     return pd.DataFrame(data=mfcc, index=index, dtype='float16')
 
 
@@ -361,7 +361,7 @@ def create_ogg_paths(song_folders):
 if __name__ == '__main__':
     # TODO: Does not work on files with BMP changes
     config = Config()
-    # config.audio_processing['use_cache'] = False
+    # config.audio_processing.use_cache = False
     df1 = process_song_folder('../data/new_dataformat/3207', config=config)
     print(df1.columns)
 
@@ -379,8 +379,8 @@ if __name__ == '__main__':
 def generate_snippets(song_df: pd.DataFrame, config: Config):
     stack = []
     ln = len(song_df)
-    window = config.beat_preprocessing['snippet_window_length']
-    skip = config.beat_preprocessing['snippet_window_skip']
+    window = config.beat_preprocessing.snippet_window_length
+    skip = config.beat_preprocessing.snippet_window_skip
 
     # Check if at least 1 window is possible
     if ln < window:
