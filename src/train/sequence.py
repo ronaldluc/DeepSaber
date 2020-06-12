@@ -67,6 +67,3 @@ class BeatmapSequence(Sequence):
         for col in self.categorical_cols:
             num_classes = [num for ending, num in config.dataset.num_classes.items() if col.endswith(ending)][0]
             self.data[col] = keras.utils.to_categorical(self.data[col], num_classes, dtype=np.float_)
-
-            # if col in self.y_cols:  # label smoothing
-            #     self.data[col] = self.data[col] * self.label_smoothing + (1 - self.label_smoothing) / num_classes
