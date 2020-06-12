@@ -1,3 +1,4 @@
+import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.models import Model
@@ -48,7 +49,9 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         if col in seq.categorical_cols:
             shape = seq.data[col].shape[-1]
             outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation='softmax'), name=col)(x)
-            loss[col] = 'categorical_crossentropy'
+            loss[col] = keras.losses.CategoricalCrossentropy(
+                label_smoothing=tf.cast(config.training.label_smoothing, 'float32'))
+            # does not work with mixed precision and stateful model
         if col in seq.regression_cols:
             shape = seq.data[col].shape[-1]
             outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation='elu'), name=col)(x)
@@ -56,8 +59,8 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
     model = Model(inputs=inputs, outputs=outputs)
 
-    optimizer = keras.optimizers.RMSprop(learning_rate=0.0001)
-    optimizer = keras.optimizers.Nadam(learning_rate=0.0005)
+    # optimizer = keras.optimizers.RMSprop(learning_rate=0.0001)
+    optimizer = keras.optimizers.Adam(learning_rate=0.0005)
     model.compile(
         optimizer=optimizer,
         loss=loss,

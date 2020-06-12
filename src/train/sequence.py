@@ -25,6 +25,7 @@ class BeatmapSequence(Sequence):
         self.df = df
         self.batch_size = config.training.batch_size
         self.snippet_size = config.beat_preprocessing.snippet_window_length
+        self.label_smoothing = config.training.label_smoothing
 
         self.init_data(config)
 

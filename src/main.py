@@ -90,7 +90,7 @@ def main():
 
     print(train.reset_index('name')['name'].unique())
 
-    keras.mixed_precision.experimental.set_policy('mixed_float16')
+    # keras.mixed_precision.experimental.set_policy('mixed_float16')
     model_path = base_folder / 'temp'
     model_path.mkdir(parents=True, exist_ok=True)
 

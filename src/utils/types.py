@@ -50,6 +50,7 @@ class DatasetConfig:
 class TrainingConfig:
     data_split = (0.0, 0.8, 0.9, 0.99,)
     batch_size = 512
+    label_smoothing = 0.0
     use_difficulties = ['Normal', 'Hard', 'Expert']
     categorical_groups = [DatasetConfig.beat_elements, DatasetConfig.beat_elements_previous_prediction,
                           DatasetConfig.categorical]
