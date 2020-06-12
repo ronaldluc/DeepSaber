@@ -70,7 +70,7 @@ def main():
     song_folders = create_song_list(base_folder)
     total = len(song_folders)
     print(f'Found {total} folders')
-    #
+
     config = Config()
     config.dataset.storage_folder = base_folder / 'full_datasets'
     config.dataset.storage_folder = base_folder / 'new_datasets'
@@ -79,6 +79,8 @@ def main():
     # generate_datasets(config)
 
     train, val, test = load_datasets(config)
+
+    # Ensure this song is excluded from the training data for hand tasting
     train.drop(index='133b', inplace=True)
     dataset_stats(train)
 
@@ -93,7 +95,7 @@ def main():
     model_path.mkdir(parents=True, exist_ok=True)
 
     train = True
-    train = False
+    # train = False
     if train:
         model = create_model(train_seq, False, config)
         model.summary()
@@ -105,7 +107,7 @@ def main():
         model.fit(train_seq,
                   validation_data=val_seq,
                   callbacks=callbacks,
-                  epochs=100,
+                  epochs=200,
                   verbose=2)
         timer('Training ')
 
@@ -114,12 +116,6 @@ def main():
     stateful_model = keras.models.load_model(model_path / 'stateful_model.keras')
     print('Evaluation')
 
-    # gen_new_beat_map_path = song_folders[-2]
-    # gen_new_beat_map_path = Path('../data/new_dataformat/4ede/')
-    # beatmap_folder = base_folder / 'testing/generation/'
-    # beatmap_folder = base_folder / 'testing' / 'truncated_song'
-    # beatmap_folder = base_folder / 'testing/generation_normal/'
-    # beatmap_folder = base_folder / 'new_dataformat' / '3205'
     beatmap_folder = base_folder / 'new_dataformat' / '133b'
 
     output_folder = base_folder / 'testing' / 'generated_songs'
