@@ -22,6 +22,6 @@ def to_categorical(df: pd.DataFrame) -> pd.DataFrame:
 
 def add_difficulty(df: pd.DataFrame, config: Config):
     df = df.reset_index('difficulty')
-    df = df[df['difficulty'].isin(config.training['use_difficulties'])]
-    df['difficulty'] = df['difficulty'].replace(config.dataset['difficulty_mapping'])
+    df = df[df['difficulty'].isin(config.training.use_difficulties)]
+    df['difficulty'] = df['difficulty'].replace(config.dataset.difficulty_mapping)
     return df

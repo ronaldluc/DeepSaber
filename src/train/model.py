@@ -27,21 +27,20 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         if col in seq.regression_cols:
             shape = None, *seq.data[col].shape[2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
-            per_stream[col] = inputs[col]
             per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=128 // (s - 2),
                                                                        kernel_size=s,
                                                                        activation='relu',
                                                                        padding='causal')(inputs[col])
                                                          for s in [3, 5, 7]],
                                                  axis=-1)
-            # per_stream[col] = layers.BatchNormalization()(per_stream[col])
+            per_stream[col] = layers.BatchNormalization()(per_stream[col])
 
     per_stream_list = list(per_stream.values())
     x = layers.concatenate(inputs=per_stream_list, axis=-1)
     x = layers.BatchNormalization()(x)
-    x = layers.LSTM(512, return_sequences=True, stateful=stateful)(x)
-    x = layers.BatchNormalization()(x)
     x = layers.LSTM(256, return_sequences=True, stateful=stateful)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.LSTM(128, return_sequences=True, stateful=stateful)(x)
 
     outputs = {}
     loss = {}

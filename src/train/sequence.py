@@ -23,8 +23,8 @@ class BeatmapSequence(Sequence):
         df = add_difficulty(df, config)
 
         self.df = df
-        self.batch_size = config.training['batch_size']
-        self.snippet_size = config.beat_preprocessing['snippet_window_length']
+        self.batch_size = config.training.batch_size
+        self.snippet_size = config.beat_preprocessing.snippet_window_length
 
         self.init_data(config)
 
@@ -58,13 +58,11 @@ class BeatmapSequence(Sequence):
             if len(self.data[col].shape) < 3:
                 self.data[col] = self.data[col].reshape(*shape, 1)
 
-        self.categorical_cols = set(
-            sum([list(config.dataset[name]) for name in config.training['categorical_groups']], []))
-        self.regression_cols = set(
-            sum([list(config.dataset[name]) for name in config.training['regression_groups']], []))
-        self.x_cols = set(sum([list(config.dataset[name]) for name in config.training['x_groups']], []))
-        self.y_cols = set(sum([list(config.dataset[name]) for name in config.training['y_groups']], []))
+        self.categorical_cols = set(sum([list(cols) for cols in config.training.categorical_groups], []))
+        self.regression_cols = set(sum([list(cols) for cols in config.training.regression_groups], []))
+        self.x_cols = set(sum([list(cols) for cols in config.training.x_groups], []))
+        self.y_cols = set(sum([list(cols) for cols in config.training.y_groups], []))
 
         for col in self.categorical_cols:
-            num_classes = [num for ending, num in config.dataset['num_classes'].items() if col.endswith(ending)][0]
+            num_classes = [num for ending, num in config.dataset.num_classes.items() if col.endswith(ending)][0]
             self.data[col] = keras.utils.to_categorical(self.data[col], num_classes, dtype=np.float_)

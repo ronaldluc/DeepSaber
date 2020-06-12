@@ -31,7 +31,7 @@ def sanity_check():
     check_identity(df1)
 
     config = Config()
-    # config.audio_processing['use_cache'] = False
+    # config.audio_processing.use_cache = False
     df1 = process_song_folder('../data/new_dataformat/3207', config=config)
 
     print(check_consistency(df1))

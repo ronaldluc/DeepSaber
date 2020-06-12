@@ -8,11 +8,9 @@ from zipfile import ZipFile
 
 import numpy as np
 import pandas as pd
-from tensorflow_core.python.keras import Model
-from tensorflow_core.python.keras.api._v2 import keras
+from tensorflow.keras import Model
 
 from process.compute import process_song_folder
-from train.model import create_model
 from train.sequence import BeatmapSequence
 from utils.types import Config, JSON
 
@@ -42,7 +40,7 @@ def create_info(bpm):
 
 def generate_beatmap(seq: BeatmapSequence, stateful_model: Model, config: Config):
     data = seq.data
-    most_recent = {name: val[:, 0:1] for name, val in data.items()}
+    most_recent = {name: val[:, 0:1] for name, val in data.items()}  # initial beat
     output_names = [f'prev_{name}' for name in stateful_model.output_names]
 
     start = time()
@@ -78,7 +76,7 @@ def predictions2df(data, seq):
 
 # @numba.njit()
 def update_next(i, output_names, pred, data, most_recent):
-    for col, val in zip(output_names, pred):
+    for col, val in zip(output_names, pred):  # TF 2.1
         val = val ** 2
         chose_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten() / np.sum(val))
         one_hot = np.zeros_like(val)
@@ -100,9 +98,9 @@ def update_generated_metadata(gen_folder, beatmap_folder, config):
         info = json.load(rf)
         difficulties = info['_difficultyBeatmapSets'][0]['_difficultyBeatmaps']
         info['_difficultyBeatmapSets'][0]['_difficultyBeatmaps'] = [x for x in difficulties if x['_difficulty']
-                                                                    in config.training['use_difficulties']]
+                                                                    in config.training.use_difficulties]
         for not_generated in (x['_difficulty'] for x in difficulties
-                              if x['_difficulty'] not in config.training['use_difficulties']):
+                              if x['_difficulty'] not in config.training.use_difficulties):
             (gen_folder / not_generated).with_suffix('.dat').unlink()
         info['_beatsPerMinute'] = 60
 
@@ -126,57 +124,19 @@ def copy_folder_contents(in_folder, out_folder):
 def create_beatmap_dfs(stateful_model: Model, path: Path, config: Config) -> Dict[str, pd.DataFrame]:
     df = process_song_folder(str(path), config)
 
-    config.beat_preprocessing['snippet_window_length'] = len(df)
-    config.training['batch_size'] = 1
+    config.beat_preprocessing.snippet_window_length = len(df)
+    config.training.batch_size = 1
     # stateful_model = None
     output = {}
 
     for difficulty, sub_df in df.groupby('difficulty'):
-        if difficulty not in config.training['use_difficulties']:
+        if difficulty not in config.training.use_difficulties:
             continue
         print(f'\nGenerating {difficulty}')
         seq = BeatmapSequence(sub_df.copy(), config)
 
-        if not stateful_model:
-            keras.mixed_precision.experimental.set_policy('float32')
-            stateful_model = create_model(seq, True, config)
-            print('\nStateful model:')
-            stateful_model.summary()
-            weights = model.get_weights()
-
-            print('Old:',
-                  sorted([int(x) if x.isdecimal() else x for x in l.name.split("_")] for l in model.layers)
-                  )
-            print('New:',
-                  sorted([int(x) if x.isdecimal() else x for x in l.name.split("_")] for l in stateful_model.layers)
-                  )
-
-            prev_layers = sorted(([int(x) if x.isdecimal() else x for x in l.name.split("_")], l) for l in model.layers)
-            new_layers = sorted(
-                ([int(x) if x.isdecimal() else x for x in l.name.split("_")], l) for l in stateful_model.layers)
-            for (_, prev_layer), (_, new_layer) in zip(prev_layers, new_layers):
-                try:
-                    new_layer.set_weights(prev_layer.get_weights())
-                except AttributeError as e:
-                    print(f'[prodict | create_beatmap_dfs] {e}')
-                print(f'{prev_layer.name} | {new_layer.name}')
-
-            # print([x.shape for x in weights])
-
-            # keras_weights_from_tff_weights()
-
-            # model.save_weights('/tmp/model')
-            # stateful_model.load_weights('/tmp/model')
-            stateful_model.set_weights(weights)
-
         beatmap_df = generate_beatmap(seq, stateful_model, config)
         stateful_model.reset_states()
-
-        # path = '../data/temp/beatmap_df.pkl'
-        # beatmap_df.to_pickle(path)
-        #
-        # path = '../data/temp/beatmap_df.pkl'
-        # beatmap_df = pd.read_pickle(path)
 
         output[difficulty] = beatmap_df
     return output
@@ -190,7 +150,7 @@ def df2beatmap(df: pd.DataFrame, config: Config, bpm: int = 60, events: Tuple = 
         '_events': events,
     }
 
-    plain_col_names = [x[2:] for x in config.dataset['beat_elements'] if x[0] is 'l' and 'cutDirection' not in x]
+    plain_col_names = [x[2:] for x in config.dataset.beat_elements if x[0] == 'l' and 'cutDirection' not in x]
     partially_equal_beat_elements = [df[f'l_{col}'].map(np.ndarray.argmax)
                                      == df[f'r_{col}'].map(np.ndarray.argmax)
                                      for col in plain_col_names]
