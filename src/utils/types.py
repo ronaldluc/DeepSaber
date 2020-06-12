@@ -9,9 +9,9 @@ JSON = Union[str, int, float, bool, None, Mapping[str, 'JSON'], List['JSON']]
 @dataclass
 class AudioProcessingConfig:
     num_cepstral = 13
-    frame_length = 0.010    # in seconds
-    frame_stride = 0.010    # in seconds
-    time_shift = -0.0       # in seconds
+    frame_length = 0.010  # in seconds
+    frame_stride = 0.010  # in seconds
+    time_shift = -0.0  # in seconds
     use_temp_derrivatives = True
     use_cache = True
     signal_max_length = 2.5e7  # in samples
@@ -26,7 +26,7 @@ class UtilsConfig:
 @dataclass
 class BeatPreprocessingConfig:
     snippet_window_length = 50  # in the number of beats
-    snippet_window_skip = 25    # in the number of beats
+    snippet_window_skip = 25  # in the number of beats
     beat_elements = ['l_lineLayer', 'l_lineIndex', 'l_cutDirection',
                      'r_lineLayer', 'r_lineIndex', 'r_cutDirection', ]
 

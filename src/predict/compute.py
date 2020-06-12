@@ -9,10 +9,8 @@ from zipfile import ZipFile
 import numpy as np
 import pandas as pd
 from tensorflow.keras import Model
-from tensorflow import keras
 
 from process.compute import process_song_folder
-from train.model import create_model
 from train.sequence import BeatmapSequence
 from utils.types import Config, JSON
 
@@ -42,7 +40,7 @@ def create_info(bpm):
 
 def generate_beatmap(seq: BeatmapSequence, stateful_model: Model, config: Config):
     data = seq.data
-    most_recent = {name: val[:, 0:1] for name, val in data.items()}     # initial beat
+    most_recent = {name: val[:, 0:1] for name, val in data.items()}  # initial beat
     output_names = [f'prev_{name}' for name in stateful_model.output_names]
 
     start = time()
