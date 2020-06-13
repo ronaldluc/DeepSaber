@@ -33,7 +33,7 @@ class BeatPreprocessingConfig:
 
 @dataclass
 class DatasetConfig:
-    storage_folder = Path('../data/full_datasets')
+    storage_folder = Path('../data/new_datasets')
     num_classes = {'difficulty': 5,  # ending of the column name: number of classes
                    '_lineLayer': 3, '_lineIndex': 4, '_cutDirection': 9}
     difficulty_mapping = {d: enum for enum, d in enumerate(['Easy', 'Normal', 'Hard', 'Expert', 'ExpertPlus'])}
