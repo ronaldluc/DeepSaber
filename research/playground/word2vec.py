@@ -7,6 +7,7 @@ Introduces Gensim's Word2Vec model and demonstrates its use on the Lee Corpus.
 """
 
 import logging
+from time import time
 from itertools import product
 from pathlib import Path
 from typing import List, Tuple, Any
@@ -99,12 +100,12 @@ def train_batch(corpus_path, models_folder, batch: pd.DataFrame):
 def get_trained_model(corpus_path):
     print(f'Word2Vec implementation: {gensim.models.word2vec.FAST_VERSION} ')
 
-    model = gensim.models.word2vec.Word2Vec(corpus_file=str(corpus_path), size=32, workers=32,
-                                            max_vocab_size=4e5, min_count=5, iter=10,
-                                            window=3)
-    # model = gensim.models.FastText(corpus_file=str(corpus_path), size=128, workers=16,
-    #                                max_vocab_size=4e5, min_count=5, iter=1,
-    #                                window=2)
+    # model = gensim.models.word2vec.Word2Vec(corpus_file=str(corpus_path), size=32, workers=32,
+    #                                         max_vocab_size=4e5, min_count=5, iter=10,
+    #                                         window=3)
+    model = gensim.models.FastText(corpus_file=str(corpus_path), size=128, workers=16,
+                                   max_vocab_size=4e5, min_count=5, iter=1,
+                                   window=2)
 
     return model
 
@@ -556,83 +557,223 @@ def project_words(model, words: List):
 # - API docs: :py:mod:`gensim.models.word2vec`
 # - `Original C toolkit and word2vec papers by Google <https://code.google.com/archive/p/word2vec/>`_.
 #
+def subword_tuple2string(tuple: Tuple[Any]):
+    return ''.join([str(x) for x in tuple])
+
 
 def word_tuple2string(tuple: Tuple[Any]):
-    if tuple[0] in 'LR' and 0 <= tuple[1] < 3 and 0 <= tuple[2] < 4 and 0 <= tuple[3] < 9:
-        return ''.join([str(x) for x in tuple])
-    return None
+    for subword_id in range(0, len(tuple), 4):
+        if not (tuple[subword_id + 0] in 'LR'
+                and 0 <= tuple[subword_id + 1] < 3
+                and 0 <= tuple[subword_id + 2] < 4
+                and 0 <= tuple[subword_id + 3] < 9):
+            return None
+    return '_'.join(
+        [subword_tuple2string(tuple[subword_id:subword_id + 4]) for subword_id in range(0, len(tuple), 4)])
 
 
 def create_analogies(path: Path):
+    """
+    Shape of a beat element is [hand][y][x][rotation]. A word is of shape [beat-element][_beat-element]*.
+    """
     lines = []
 
-    lines.append(': single-hand-translation')
-    for translation in product(range(-2, 3), range(-3, 4)):
-        if translation == (0, 0):  # remove identity translation
+    def new_section(name: str):
+        logging.info(f'Generating analogies for section {name}')
+        lines.append(f': {name}')
+
+    new_section('single-hand-translation-x')
+    for dx in range(-3, 4):
+        if dx == 0:  # remove identity translation
             continue
-        lines.append(f': single-hand-translation {translation}')
-        translation = '', *translation, 0
-        # fn = lambda word_from, translation: [a + b for a, b in zip(word_from, translation)]
-        for hand, rotation in product('LR', range(9)):
-            for example_from in product(range(3), range(4)):
-                example_from = hand, *example_from, rotation
-                example_to = [a + b for a, b in zip(example_from, translation)]
+        translation = '', 0, dx, 0
+        add_valid_translations_one_hand(lines, translation)
 
-                for question_from in product(range(3), range(4)):
-                    question_from = hand, *question_from, rotation
-                    question_to = [a + b for a, b in zip(question_from, translation)]
-                    if example_from == question_from:   # skip identical
-                        continue
+    new_section('single-hand-translation-y')
+    for dy in range(-2, 3):
+        if dy == 0:  # remove identity translation
+            continue
+        translation = '', dy, 0, 0
+        add_valid_translations_one_hand(lines, translation)
 
-                    analogy = [word_tuple2string(x) for x in [example_from, example_to, question_from, question_to]]
-                    if None in analogy:
-                        continue
-                    lines.append(' '.join(analogy))
+    new_section('single-hand-translation-other')
+    for dydx in product(range(-2, 3), range(-3, 4)):
+        if 0 in dydx:  # previously used translations
+            continue
+        translation = '', *dydx, 0
 
-    lines.append(': single-hand-rotation')
+        add_valid_translations_one_hand(lines, translation)
+
+    new_section('single-hand-rotation')
     for rotation_change in range(-8, 9):
         if rotation_change == 0:  # remove identity rotation change
             continue
         translation = '', 0, 0, rotation_change
-        for hand, rotation in product('LR', range(9)):
-            for example_from in product(range(3), range(4)):
-                example_from = hand, *example_from, rotation
-                example_to = [a + b for a, b in zip(example_from, translation)]
+        add_valid_translations_one_hand(lines, translation)
 
-                for question_from in product(range(3), range(4)):
-                    question_from = hand, *question_from, rotation
-                    question_to = [a + b for a, b in zip(question_from, translation)]
-                    if example_from == question_from:   # skip identical
-                        continue
-
-                    analogy = [word_tuple2string(x) for x in [example_from, example_to, question_from, question_to]]
-                    if None in analogy:
-                        continue
-                    lines.append(' '.join(analogy))
-
-    lines.append(': single-hand-hand-swap')
+    new_section('single-hand-hand-swap')
     for hand_id in range(2):
         hand_from = 'LR'[hand_id]
         hand_to = 'RL'[hand_id]
 
-        for example_from in product(range(3), range(4), range(9)):
-            example_to = hand_to, *example_from
-            example_from = hand_from, *example_from
-            for question_from in product(range(3), range(4), range(9)):
-                question_to = hand_to, *question_from
-                question_from = hand_from, *question_from
-                if example_from == question_from:   # skip identical
-                    continue
+        for example_position in product(range(3), range(4), range(9)):
+            example_from = hand_from, *example_position
+            example_to = hand_to, *example_position
+            for qustion_position in product(range(3), range(4), range(9)):
+                question_from = hand_from, *qustion_position
+                question_to = hand_to, *qustion_position
+                add_valid_analogy(lines, example_from, example_to, question_from, question_to)
 
-                analogy = [word_tuple2string(x) for x in [example_from, example_to, question_from, question_to]]
-                if None in analogy:
-                    continue
-                lines.append(' '.join(analogy))
+    new_section('single-hand-doublebeat-y')
+    for dy, rotation in product(range(-2, 3), [0, 1]):
+        if dy == 0:  # remove identity multiplication
+            continue
+        translation = '', dy, 0, 0
+        add_valid_translations_one_hand_doublebeat(lines, translation, rotation)
+
+    new_section('single-hand-doublebeat-x')
+    for dx, rotation in product(range(-3, 4), [2, 3]):
+        if dx == 0:  # remove identity multiplication
+            continue
+        translation = '', 0, dx, 0
+        add_valid_translations_one_hand_doublebeat(lines, translation, rotation)
+
+    new_section('single-hand-doublebeat-other')
+    for dx, dy, rotation in product(range(-2, 3), range(-3, 4), range(9)):
+        if 0 in dydx:  # previously used multiplication
+            continue
+        translation = '', dy, dx, 0
+        add_valid_translations_one_hand_doublebeat(lines, translation, rotation)
+
+    new_section('double-hand-translation-x')
+    for dx, right_dx, right_drotation in product(range(-3, 4), range(-3, 4), range(-8, 9)):
+        if dx == 0 or right_dx == 0:  # remove identity translation
+            continue
+        translation = '', 0, dx, 0
+        right_translation = '', 0, right_dx, right_drotation
+        add_valid_translations_two_hand(lines, translation, right_translation)
+
+    new_section('double-hand-translation-y')
+    for dy, right_dy, right_drotation in product(range(-2, 3), range(-2, 3), range(-8, 9)):
+        if dy == 0 or right_dy == 0:  # remove identity translation
+            continue
+        translation = '', dy, 0, 0
+        right_translation = '', right_dy, 0, right_drotation
+        add_valid_translations_two_hand(lines, translation, right_translation)
+
+    # Generates mostly unused beat combinations, yet doubles the testing time
+    # new_section('double-hand-translation-other')
+    # for dy, dx, right_dy, right_dx, right_drotation in product(range(-2, 3), range(-3, 4),
+    #                                                            range(-2, 3), range(-3, 4),
+    #                                                            range(-8, 9)):
+    #     if 0 in (dy, dx, right_dy, right_dx):  # remove previously used
+    #         continue
+    #     translation = '', dy, dx, 0
+    #     right_translation = '', right_dy, right_dx, right_drotation
+    #     add_valid_translations_two_hand(lines, translation, right_translation)
+
+    new_section('double-hand-rotation-x')
+    for rotation, right_dx, right_drotation in product(range(-8, 9), range(-3, 4), range(-8, 9)):
+        if right_dx == 0:  # remove identity translation
+            continue
+        translation = '', 0, 0, rotation
+        right_translation = '', 0, right_dx, right_drotation
+        add_valid_translations_two_hand(lines, translation, right_translation)
+
+    new_section('double-hand-rotation-y')
+    for rotation, right_dy, right_drotation in product(range(-8, 9), range(-2, 3), range(-8, 9)):
+        if right_dy == 0:  # remove identity translation
+            continue
+        translation = '', 0, 0, rotation
+        right_translation = '', right_dy, 0, right_drotation
+        add_valid_translations_two_hand(lines, translation, right_translation)
+
+    # Generates mostly unused beat combinations, yet doubles the testing time
+    # new_section('double-hand-rotation-other')
+    # for rotation, right_dy, right_dx, right_drotation in product(range(-8, 9),
+    #                                                              range(-2, 3), range(-3, 4),
+    #                                                              range(-8, 9)):
+    #     if 0 in (right_dy, right_dx):  # remove previously used
+    #         continue
+    #     translation = '', 0, 0, rotation
+    #     right_translation = '', right_dy, right_dx, right_drotation
+    #     add_valid_translations_two_hand(lines, translation, right_translation)
 
     with open(path, 'w') as wf:
         wf.write('\n'.join(lines) + '\n')
 
     pass
+
+
+def add_valid_translations_one_hand(lines, translation):
+    def create_word_tuples(hand, position, rotation, translation):
+        tuple_from = hand, *position, rotation
+        tuple_to = [a + b for a, b in zip(tuple_from, translation)]
+        return tuple_from, tuple_to
+
+    add_valid_translation(lines, translation, create_word_tuples)
+    return lines
+
+
+def add_valid_translations_one_hand_doublebeat(lines, translation, rotation):
+    def create_word_tuples_multiplication(hand, position, rotation, translation):
+        tuple_from = hand, *position, rotation
+        tuple_to = *tuple_from, *[a + b for a, b in zip(tuple_from, translation)]
+        return tuple_from, tuple_to
+
+    def create_word_tuples_demultiplication(hand, position, rotation, translation):
+        return create_word_tuples_multiplication(hand, position, rotation, translation)[::-1]
+
+    for hand in 'LR':
+        add_valid_translation_only_positions(lines, hand, rotation, translation, create_word_tuples_multiplication)
+        add_valid_translation_only_positions(lines, hand, rotation, translation, create_word_tuples_demultiplication)
+    return lines
+
+
+def add_valid_translations_two_hand(lines, translation, hand_translation):
+    def create_word_tuples(hand, position, rotation, translation):
+        left_from = hand, *position, rotation
+        right_from = 'R', *position, rotation
+        tuple_from = *left_from, *[a + b for a, b in zip(right_from, hand_translation)]
+        tuple_to = [a + b for a, b in zip(tuple_from, translation * 2)]
+        return tuple_from, tuple_to
+
+    for hand, rotation in product('L', range(-8, 9)):
+        add_valid_translation_only_positions(lines, hand, rotation, translation, create_word_tuples)
+    return lines
+
+
+def add_valid_translations_one_hand_demultiply(lines, translation, rotation):
+    def create_word_tuples(hand, position, rotation, translation):
+        tuple_to = hand, *position, rotation
+        tuple_from = *tuple_to, *[a + b for a, b in zip(tuple_to, translation)]
+        return tuple_from, tuple_to
+
+    for hand in 'LR':
+        add_valid_translation_only_positions(lines, hand, rotation, translation, create_word_tuples)
+    return lines
+
+
+def add_valid_translation(lines, translation, create_word_tuples):
+    for hand, rotation in product('LR', range(9)):
+        add_valid_translation_only_positions(lines, hand, rotation, translation, create_word_tuples)
+
+
+def add_valid_translation_only_positions(lines, hand, rotation, translation, create_word_tuples):
+    for example_position in product(range(3), range(4)):
+        example_from, example_to = create_word_tuples(hand, example_position, rotation, translation)
+
+        for question_position in product(range(3), range(4)):
+            question_from, question_to = create_word_tuples(hand, question_position, rotation, translation)
+            add_valid_analogy(lines, example_from, example_to, question_from, question_to)
+
+
+def add_valid_analogy(lines, example_from, example_to, question_from, question_to):
+    """Add analogy to `lines` if all words are valid"""
+    if example_from != question_from:  # skip identical analogies
+        analogy = [word_tuple2string(x) for x in [example_from, example_to, question_from, question_to]]
+        if None not in analogy:
+            lines.append(' '.join(analogy))
 
 
 def main():
@@ -664,6 +805,7 @@ def main():
             'R000 R001 ' \
             'R100 R101 ' \
             'R010 R011 '.split()
+
     # words = 'program programmer ' \
     #         'architecture architect ' \
     #         'engine engineer'.split()
@@ -674,7 +816,10 @@ def main():
     create_analogies(models_folder / 'beat_analogies.txt')
 
     # model.wv.evaluate_word_analogies()
-    model.wv.evaluate_word_analogies(models_folder / 'beat_analogies.txt', restrict_vocab=5000)  # TODO: Try higher values
+    start = time()
+    model.wv.evaluate_word_analogies(models_folder / 'beat_analogies.txt',
+                                     restrict_vocab=90000)  # TODO: Try higher values
+    print(f'beat_analogies took {time() - start:5} s')
     # model.evaluate_word_pairs(datapath('wordsim353.tsv'))
 
 
