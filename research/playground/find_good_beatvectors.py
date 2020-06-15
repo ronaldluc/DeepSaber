@@ -2,6 +2,7 @@ from pathlib import Path
 
 import gensim
 import logging
+import pandas as pd
 
 storage_folder = Path('../../data/new_datasets')
 
@@ -13,10 +14,10 @@ def eval_model(**kwargs):
 
     res = model.wv.evaluate_word_analogies(storage_folder / 'beat_analogies.txt')
 
-    correct = sum([len(section['correct']) for section in res[1]])
-    incorrect = sum([len(section['incorrect']) for section in res[1]])
-    total_sum = correct + incorrect
-    print(f'Correct {correct:7} | incorrect {incorrect:7} | total {total_sum:7} | acc {correct/total_sum:7}')
+    # correct = sum([len(section['correct']) for section in res[1]])
+    # incorrect = sum([len(section['incorrect']) for section in res[1]])
+    # total_sum = correct + incorrect
+    # print(f'Correct {correct:7} | incorrect {incorrect:7} | total {total_sum:7} | acc {correct/total_sum:7}')
     return res[0]
 
 
@@ -28,9 +29,9 @@ def main():
 
     bool_ = (0.1, 1.9)
     pbounds = {
-        'size': (4, 8),  # log int
+        'size': (4, 9),  # log int
         'window': (1, 7),  # int
-        'iter': (1.1, 20),  # int  : Number of iterations (epochs) over the corpus.
+        'iter': (1.1, 50),  # int  : Number of iterations (epochs) over the corpus.
         'sg': bool_,  # bool : skip-gram if `sg=1`, otherwise CBOW.
         'hs': bool_,  # bool : If 1, hierarchical softmax will be used for model training.
         #        If set to 0, and `negative` is non-zero, negative sampling will be used.
@@ -52,9 +53,19 @@ def main():
     )
 
     optimizer.maximize(
-        init_points=40,
-        n_iter=200,
+        init_points=80,
+        n_iter=500,
     )
+
+    rdf = pd.DataFrame(optimizer.res)
+    fasttext_rdf = rdf.loc[rdf.params.apply(lambda x: x['word_ngrams'] >= 1)]
+    word2vec_rdf = rdf.loc[rdf.params.apply(lambda x: x['word_ngrams'] < 1)]
+    fasttext_params = rdf.loc[fasttext_rdf['target'].idxmax()].params
+    word2vec_params = rdf.loc[word2vec_rdf['target'].idxmax()].params
+    params = rdf.loc[rdf['target'].idxmax()].params
+
+    print(params)
+    rdf.to_csv('models_hyperparams.csv')
 
 
 if __name__ == '__main__':
