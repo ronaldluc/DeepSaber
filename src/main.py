@@ -16,7 +16,7 @@ from utils.functions import check_consistency
 from utils.types import Config, Timer
 
 
-def generate_datasets(config: Config):
+def generate_datasets(song_folders, config: Config):
     timer = Timer()
     for phase, split in zip(['train', 'val', 'test'],
                             zip(config.training.data_split,
@@ -24,11 +24,13 @@ def generate_datasets(config: Config):
                             ):
         print('\n', '=' * 100, sep='')
         print(f'Processing {phase}')
+        total = len(song_folders)
         split_from = int(total * split[0])
         split_to = int(total * split[1])
         result_path = config.dataset.storage_folder / f'{phase}_beatmaps.pkl'
 
         df = songs2dataset(song_folders[split_from:split_to], config=config)
+        # df['word'] = df['word'].astype('category')
         timer(f'Created {phase} dataset', 1)
 
         check_consistency(df)
@@ -76,12 +78,12 @@ def main():
     config.dataset.storage_folder = base_folder / 'new_datasets'
     # config.audio_processing.use_cache = False
 
-    # generate_datasets(config)
+    # generate_datasets(song_folders, config)
 
     train, val, test = load_datasets(config)
 
     # Ensure this song is excluded from the training data for hand tasting
-    train.drop(index='133b', inplace=True)
+    train.drop(index='133b', inplace=True, errors='ignore')
     dataset_stats(train)
 
     train_seq = BeatmapSequence(train, config)
@@ -107,7 +109,7 @@ def main():
         model.fit(train_seq,
                   validation_data=val_seq,
                   callbacks=callbacks,
-                  epochs=200,
+                  epochs=420,
                   verbose=2)
         timer('Training ')
 

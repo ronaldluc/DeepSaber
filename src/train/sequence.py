@@ -49,20 +49,22 @@ class BeatmapSequence(Sequence):
     def init_data(self, config: Config):
         df = self.df
         shape = max(1, len(df) // self.snippet_size), min(len(df), self.snippet_size)
-        self.data = {col: np.array(df[col]
-                                   .to_numpy()
-                                   .reshape(shape)
-                                   .tolist(), dtype=np.float_)
-                     for col in df.columns}
 
-        for col in df.columns:
-            if len(self.data[col].shape) < 3:
-                self.data[col] = self.data[col].reshape(*shape, 1)
 
         self.categorical_cols = set(sum([list(cols) for cols in config.training.categorical_groups], []))
         self.regression_cols = set(sum([list(cols) for cols in config.training.regression_groups], []))
         self.x_cols = set(sum([list(cols) for cols in config.training.x_groups], []))
         self.y_cols = set(sum([list(cols) for cols in config.training.y_groups], []))
+
+        self.data = {col: np.array(df[col]
+                                   .to_numpy()
+                                   .reshape(shape)
+                                   .tolist(), dtype=np.float_)
+                     for col in self.x_cols | self.y_cols}
+
+        for col in self.data:
+            if len(self.data[col].shape) < 3:
+                self.data[col] = self.data[col].reshape(*shape, 1)
 
         for col in self.categorical_cols:
             num_classes = [num for ending, num in config.dataset.num_classes.items() if col.endswith(ending)][0]

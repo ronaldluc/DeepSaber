@@ -112,7 +112,7 @@ def create_bpm_df(beatmap: JSON) -> pd.DataFrame:
 
 def beatmap2beat_df(beatmap: JSON, info: JSON, config: Config) -> pd.DataFrame:
     # Load notes
-    df = pd.DataFrame(
+    df: pd.DataFrame = pd.DataFrame(
         (x for x in beatmap['_notes'] if '_time' in x),
         columns=['_time', '_type', '_lineLayer', '_lineIndex', '_cutDirection', ],
     ).astype(dtype={'_type': 'int8', '_lineLayer': 'int8', '_lineIndex': 'int8', '_cutDirection': 'int8'}, ) \
@@ -134,6 +134,15 @@ def beatmap2beat_df(beatmap: JSON, info: JSON, config: Config) -> pd.DataFrame:
                                               info["_beatsPerMinute"]), 3)
 
     out_df = merge_beat_elements(df)
+
+    df = df.set_index('_time')
+    df['hand'] = 'L'
+    df.loc[df['_type'] == 1, 'hand'] = 'R'
+    df['word'] = df['hand'].str.cat([df[x].astype(str) for x in ['_lineLayer', '_lineIndex', '_cutDirection']])
+    df = df.sort_values('word')
+
+    temp = df['word'].groupby(level=0).apply(lambda x: x.str.cat(sep='_'))
+    out_df['word'] = temp
 
     check_column_ranges(out_df, config)
 
@@ -197,7 +206,7 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
     """
     progress(*order, config=config, name='Processing song folders')
 
-    files = []  # TODO: Rewrit eto use Pathlib
+    files = []  # TODO: Rewrite to use Pathlib
     for dirpath, dirnames, filenames in os.walk(folder):
         files.extend(filenames)
         break
