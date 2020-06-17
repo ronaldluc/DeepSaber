@@ -84,7 +84,7 @@ def main():
 
     # Ensure this song is excluded from the training data for hand tasting
     train.drop(index='133b', inplace=True, errors='ignore')
-    dataset_stats(train)
+    # dataset_stats(train)
 
     train_seq = BeatmapSequence(train, config)
     val_seq = BeatmapSequence(val, config)
@@ -103,6 +103,7 @@ def main():
         model.summary()
 
         callbacks = create_callbacks(train_seq, config)
+        # callbacks = []
 
         timer = Timer()
 
@@ -129,7 +130,7 @@ def save_model(model, model_path, train_seq, config):
     keras.mixed_precision.experimental.set_policy('float32')
     config.training.batch_size = 1
     stateful_model = create_model(train_seq, True, config)
-    stateful_model.set_weights(model.get_weights())
+    stateful_model.set_weights(model.get_weights())    # Re-setting weights on a statefull model does not work on TF2.2+
     model.save(model_path / 'model.keras')
     stateful_model.save(model_path / 'stateful_model.keras')
     return stateful_model

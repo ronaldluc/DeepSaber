@@ -14,3 +14,16 @@ def mean_pred(y_true, y_pred):
     print('Pred labels')
     print(y_pred)
     return K.backend.mean(y_pred)
+
+
+def my_loss(*args, **kwargs):
+    print(f'Loss args: {args}')
+    print(f'Loss kwargs: {kwargs}')
+
+    def real_loss(*rargs, **rkwargs):
+        print(f'Loss rargs: {rargs}')
+        print(f'Loss rkwargs: {rkwargs}')
+
+        return 0.0
+
+    return real_loss

@@ -49,6 +49,7 @@ class DatasetConfig:
 @dataclass
 class TrainingConfig:
     data_split = (0.0, 0.8, 0.9, 0.99,)
+    AVS_proxy_ratio = 0.01   # Fraction of songs to compute AVS cosine similarity on
     batch_size = 512
     label_smoothing = 0.0
     use_difficulties = ['Normal', 'Hard', 'Expert']
