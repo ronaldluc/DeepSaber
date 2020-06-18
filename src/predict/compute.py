@@ -6,13 +6,14 @@ from time import time
 from typing import Dict, Tuple
 from zipfile import ZipFile
 
+import numba
 import numpy as np
 import pandas as pd
 from tensorflow.keras import Model
 
 from process.compute import process_song_folder
 from train.sequence import BeatmapSequence
-from utils.types import Config, JSON
+from utils.types import Config, JSON, Timer
 
 
 def create_info(bpm):
@@ -40,8 +41,8 @@ def create_info(bpm):
 
 def generate_beatmap(seq: BeatmapSequence, stateful_model: Model, config: Config):
     data = seq.data
-    most_recent = {name: val[:, 0:1] for name, val in data.items()}  # initial beat
-    output_names = [f'prev_{name}' for name in stateful_model.output_names]
+    most_recent = {col: seq.data[col][:, 0:1] for col in stateful_model.input_names}  # initial beat
+    output_names = [f'prev_{name}' for name in stateful_model.output_names]     # For TF 2.1 compatibility
 
     start = time()
     for i in range(len(seq.df) - 1):
@@ -76,7 +77,9 @@ def predictions2df(data, seq):
 
 # @numba.njit()
 def update_next(i, output_names, pred, data, most_recent):
-    for col, val in zip(output_names, pred):  # TF 2.1
+    # for col, val in zip(output_names, pred):  # TF 2.1
+    for col, val in pred.items():  # TF 2.2+
+        col = f'prev_{col}'
         val = val ** 2
         chose_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten() / np.sum(val))
         one_hot = np.zeros_like(val)

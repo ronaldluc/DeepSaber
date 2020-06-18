@@ -84,7 +84,7 @@ def main():
 
     # Ensure this song is excluded from the training data for hand tasting
     train.drop(index='133b', inplace=True, errors='ignore')
-    dataset_stats(train)
+    # dataset_stats(train)
 
     train_seq = BeatmapSequence(train, config)
     val_seq = BeatmapSequence(val, config)
@@ -92,7 +92,7 @@ def main():
 
     print(train.reset_index('name')['name'].unique())
 
-    # keras.mixed_precision.experimental.set_policy('mixed_float16')
+    keras.mixed_precision.experimental.set_policy('mixed_float16')
     model_path = base_folder / 'temp'
     model_path.mkdir(parents=True, exist_ok=True)
 
@@ -103,6 +103,7 @@ def main():
         model.summary()
 
         callbacks = create_callbacks(train_seq, config)
+        # callbacks = []
 
         timer = Timer()
 
@@ -110,7 +111,8 @@ def main():
                   validation_data=val_seq,
                   callbacks=callbacks,
                   epochs=420,
-                  verbose=2)
+                  verbose=2,
+                  )
         timer('Training ')
 
         save_model(model, model_path, train_seq, config)
@@ -125,12 +127,20 @@ def main():
     generate_complete_beatmaps(beatmap_folder, output_folder, stateful_model, config)
 
 
+def debug_model(model: keras.Model):
+    for layer in model.layers:
+        shapes = [x.shape for x in layer.weights]
+        print(f'{layer.name:12}: {shapes}')
+    model.summary()
+
+
 def save_model(model, model_path, train_seq, config):
     keras.mixed_precision.experimental.set_policy('float32')
     config.training.batch_size = 1
     stateful_model = create_model(train_seq, True, config)
-    stateful_model.set_weights(model.get_weights())
-    model.save(model_path / 'model.keras')
+    plain_model = keras.Model(model.inputs, model.outputs)  # drops non-serializable metrics, etc.
+    stateful_model.set_weights(plain_model.get_weights())
+    plain_model.save(model_path / 'model.keras')
     stateful_model.save(model_path / 'stateful_model.keras')
     return stateful_model
 

@@ -50,7 +50,6 @@ class BeatmapSequence(Sequence):
         df = self.df
         shape = max(1, len(df) // self.snippet_size), min(len(df), self.snippet_size)
 
-
         self.categorical_cols = set(sum([list(cols) for cols in config.training.categorical_groups], []))
         self.regression_cols = set(sum([list(cols) for cols in config.training.regression_groups], []))
         self.x_cols = set(sum([list(cols) for cols in config.training.x_groups], []))
