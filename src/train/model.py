@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 
 import gensim
 import numpy as np
@@ -8,20 +8,14 @@ from tensorflow.keras import layers
 from tensorflow.keras.models import Model
 from tensorflow.python.eager import backprop
 from tensorflow.python.keras.engine import data_adapter
+from tensorflow.python.keras.engine.training import _minimize
 
-from train.metric import create_metrics
+from train.metric import create_metrics, CosineDistance
 from train.sequence import BeatmapSequence
 from utils.types import Config
 
 
-def compute_acc(res_dict):
-    acc = [val for key, val in res_dict.items() if 'acc' in key]
-    if len(acc) == 0:
-        return 0.0
-    return sum(acc) / len(acc)
-
-
-def y2action_word(y: Dict):
+def y2action_word(y: Dict[str, tf.TensorArray]):
     """
     Converts dictionary of action one-hot vectors into a action word representation
     Example output element: L000_R001
@@ -45,16 +39,21 @@ class AVSModel(Model):
     is to avoid recomputing WordVec embeddings multiple times as their computation takes orders of magnitude
     more time than back propagation.
     """
+
     def __init__(self, config: Config, *args, **kwargs):
         super(AVSModel, self).__init__(*args, **kwargs)
-        self.avs_metric = tf.keras.metrics.CosineSimilarity('avs')
+        self.vector_metrics = {
+            'avs_dist': CosineDistance('avs_dist'),
+            'avs_l1': tf.keras.metrics.MeanAbsoluteError('avs_l1'),
+            'avs_l2': tf.keras.metrics.MeanSquaredError('avs_l2'),
+        }
         self.config = config
-        self.word_model = gensim.models.keyedvectors.WordEmbeddingsKeyedVectors.load(
-            str(self.config.dataset.storage_folder / 'fasttext.model'))
+        self.word_model = gensim.models.KeyedVectors.load(str(self.config.dataset.storage_folder / 'fasttext.model'))
 
-    def reset_metrics(self):
-        super(AVSModel, self).reset_metrics()
-        self.avs_metric.reset_states()
+    @property
+    def metrics(self) -> List:
+        metrics: List = super(AVSModel, self).metrics
+        return metrics + list(self.vector_metrics.values())
 
     def train_step(self, data):
         data = data_adapter.expand_1d(data)
@@ -64,15 +63,15 @@ class AVSModel(Model):
             y_pred = self(x, training=True)
             loss = self.compiled_loss(y, y_pred, sample_weight, regularization_losses=self.losses)
             # For custom training steps, users can just write:
-            trainable_variables = self.trainable_variables
-            gradients = tape.gradient(loss, trainable_variables)
-            self.optimizer.apply_gradients(zip(gradients, trainable_variables))
+            # trainable_variables = self.trainable_variables
+            # gradients = tape.gradient(loss, trainable_variables)
+            # self.optimizer.apply_gradients(zip(gradients, trainable_variables))
         # The _minimize call does a few extra steps unnecessary in most cases,
         # such as loss scaling and gradient clipping.
-        # _minimize(self.distribute_strategy, tape, self.optimizer, loss,
-        #           self.trainable_variables)
+            _minimize(self.distribute_strategy, tape, self.optimizer, loss,
+                      self.trainable_variables)
 
-        self.update_metrics(y_pred, y, sample_weight)
+        self.update_metrics(y_pred, y, sample_weight, train=True)
 
         return self.get_metrics_dict()
 
@@ -88,22 +87,27 @@ class AVSModel(Model):
 
         return self.get_metrics_dict()
 
-    def update_metrics(self, y_pred, y, sample_weight):
+    def update_metrics(self, y_pred, y, sample_weight, train=False):
         self.compiled_metrics.update_state(y, y_pred, sample_weight)
-        y_vec = self.avs_embedding(y)
-        y_pred_vec = self.avs_embedding(y_pred)
-        self.avs_metric.update_state(y_vec, y_pred_vec)
+
+        if not train:
+            y_vec = self.avs_embedding(y)
+            y_pred_vec = self.avs_embedding(y_pred)
+            for metric in self.vector_metrics.values():
+                metric.update_state(y_vec, y_pred_vec)
 
     def get_metrics_dict(self):
         metrics = {m.name: m.result() for m in self.metrics}
-        return {'loss': metrics['loss'], 'avg_acc': compute_acc(metrics), 'avs': self.avs_metric.result()}
+        return metrics
 
     def word2word_vec(self, word):
         use_len = int(self.config.training.AVS_proxy_ratio * len(word)) + 1
         use_word = word[:use_len]
-        word_vec = self.word_model[use_word.flatten()]
-        new_shape = *use_word.shape, word_vec.shape[-1]
-        return np.reshape(word_vec, new_shape)
+        try:
+            word_vec = self.word_model[use_word.flatten()]
+        except KeyError:    # Fallback for non-FastText based word embeddings
+            word_vec = np.zeros((np.dot(*use_word.shape), 256), dtype=np.float32)
+        return word_vec
 
     def avs_embedding(self, y):
         y_word = y2action_word(y)
@@ -111,8 +115,16 @@ class AVSModel(Model):
         return y_vec
 
 
+def name_generator(prefix):
+    id_ = 0
+    while True:
+        yield f'{prefix}{id_}'
+        id_ += 1
+
+
 def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     batch_size = 1 if stateful else None
+    names = name_generator('layer')
 
     inputs = {}
     per_stream = {}
@@ -122,29 +134,32 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
             per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=64 // (s - 2),
                                                                        kernel_size=s,
-                                                                       activation='relu',
-                                                                       padding='causal')(inputs[col])
+                                                                       activation='elu',
+                                                                       padding='causal',
+                                                                       name=names.__next__())(inputs[col])
                                                          for s in [3, 5, 7]],
-                                                 axis=-1)
+                                                 axis=-1, name=names.__next__(), )
             per_stream[col] = inputs[col]
-            per_stream[col] = layers.BatchNormalization()(per_stream[col])
+            per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
         if col in seq.regression_cols:
             shape = None, *seq.data[col].shape[2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
             per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=128 // (s - 2),
                                                                        kernel_size=s,
-                                                                       activation='relu',
-                                                                       padding='causal')(inputs[col])
+                                                                       activation='elu',
+                                                                       padding='causal',
+                                                                       name=names.__next__())(inputs[col])
                                                          for s in [3, 5, 7]],
-                                                 axis=-1)
-            per_stream[col] = layers.BatchNormalization()(per_stream[col])
+                                                 axis=-1, name=names.__next__(), )
+            per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
 
     per_stream_list = list(per_stream.values())
-    x = layers.concatenate(inputs=per_stream_list, axis=-1)
-    x = layers.BatchNormalization()(x)
-    x = layers.LSTM(256, return_sequences=True, stateful=stateful)(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.LSTM(128, return_sequences=True, stateful=stateful)(x)
+    x = layers.concatenate(inputs=per_stream_list, axis=-1, name=names.__next__(), )
+    x = layers.BatchNormalization(name=names.__next__(), )(x)
+    x = layers.LSTM(256, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
+    x = layers.BatchNormalization(name=names.__next__(), )(x)
+    x = layers.LSTM(128, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
+    x = layers.BatchNormalization(name=names.__next__(), )(x)
 
     outputs = {}
     loss = {}
@@ -153,14 +168,14 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
             shape = seq.data[col].shape[-1]
             outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation='softmax'), name=col)(x)
             loss[col] = keras.losses.CategoricalCrossentropy(
-                label_smoothing=tf.cast(config.training.label_smoothing, 'float32'))
+                label_smoothing=tf.cast(config.training.label_smoothing, 'float16'))
             # does not work with mixed precision and stateful model
         if col in seq.regression_cols:
             shape = seq.data[col].shape[-1]
             outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation='elu'), name=col)(x)
             loss[col] = 'mae'
 
-    if stateful:
+    if stateful or config.training.AVS_proxy_ratio == 0:
         model = Model(inputs=inputs, outputs=outputs)
     else:
         model = AVSModel(inputs=inputs, outputs=outputs, config=config)
@@ -170,8 +185,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     model.compile(
         optimizer=optimizer,
         loss=loss,
-        # loss=my_loss,
-        metrics=create_metrics(config)  # + [my_loss(outputs)]
+        metrics=create_metrics(config),
     )
 
     return model
