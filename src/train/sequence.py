@@ -43,7 +43,8 @@ class BeatmapSequence(Sequence):
         return x, y
 
     def on_epoch_end(self):
-        # self.data[' ']
+        """Mirror horizontally"""
+
         pass
 
     def init_data(self, config: Config):
