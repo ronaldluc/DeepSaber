@@ -68,8 +68,8 @@ class AVSModel(Model):
             # self.optimizer.apply_gradients(zip(gradients, trainable_variables))
         # The _minimize call does a few extra steps unnecessary in most cases,
         # such as loss scaling and gradient clipping.
-            _minimize(self.distribute_strategy, tape, self.optimizer, loss,
-                      self.trainable_variables)
+        _minimize(self.distribute_strategy, tape, self.optimizer, loss,
+                  self.trainable_variables)
 
         self.update_metrics(y_pred, y, sample_weight, train=True)
 
