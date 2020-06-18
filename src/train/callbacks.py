@@ -6,14 +6,15 @@ from train.sequence import BeatmapSequence, OnEpochEnd
 from utils.types import Config
 import numpy as np
 
+
 def create_callbacks(train_seq: BeatmapSequence, config: Config):
     logdir = f'../data/logdir1/model_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}'
     callbacks = [
-        K.callbacks.TensorBoard(logdir, histogram_freq=5),
-        # K.callbacks.ReduceLROnPlateau(monitor='loss', min_delta=0.001, factor=0.7, patience=10, min_lr=0.00005,
+        K.callbacks.TensorBoard(logdir, histogram_freq=0),
+        # K.callbacks.ReduceLROnPlateau(monitor='loss', min_delta=0.001, factor=0.7, patience=8, min_lr=0.00005,
         #                               verbose=1, cooldown=3),
-        ForgivingEarlyStopping(monitor='val_avs_dist', max_forgiveness=0.005, patience=3, verbose=0, mode='auto',
-                                  baseline=None, restore_best_weights=True),
+        ForgivingEarlyStopping(monitor='val_avs_dist', max_forgiveness=0.003, patience=20, verbose=0, mode='auto',
+                               baseline=None, restore_best_weights=True),
         OnEpochEnd([train_seq]),
     ]
 
@@ -77,8 +78,24 @@ class ForgivingEarlyStopping(K.callbacks.EarlyStopping):
                 self.max_forgiveness *= -1
 
     def on_epoch_end(self, epoch, logs=None):
-        super(ForgivingEarlyStopping, self).on_epoch_end(epoch, logs)
+        current = self.get_monitor_value(logs)
+        if current is None:
+          return
+        if self.monitor_op(current - self.min_delta, self.best):
+          self.best = current
+          self.wait = 0
+          if self.restore_best_weights:
+            self.best_weights = self.model.get_weights()
+        elif self.max_forgiveness and self.monitor_op(current - self.max_forgiveness, self.best):
+            self.wait += 0.0
+        else:
+          self.wait += 1
+          if self.wait >= self.patience:
+            self.stopped_epoch = epoch
+            self.model.stop_training = True
+            if self.restore_best_weights:
+              if self.verbose > 0:
+                print('Restoring model weights from the end of the best epoch.')
+              self.model.set_weights(self.best_weights)
 
         current = self.get_monitor_value(logs)
-        if self.max_forgiveness and self.monitor_op(current - self.max_forgiveness, self.best):
-            self.wait = 0

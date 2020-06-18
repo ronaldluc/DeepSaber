@@ -30,8 +30,10 @@ def generate_datasets(song_folders, config: Config):
         result_path = config.dataset.storage_folder / f'{phase}_beatmaps.pkl'
 
         df = songs2dataset(song_folders[split_from:split_to], config=config)
-        # df['word'] = df['word'].astype('category')
         timer(f'Created {phase} dataset', 1)
+
+        word_model = 0
+        df['word']
 
         check_consistency(df)
 
@@ -92,7 +94,7 @@ def main():
 
     print(train.reset_index('name')['name'].unique())
 
-    keras.mixed_precision.experimental.set_policy('mixed_float16')
+    # keras.mixed_precision.experimental.set_policy('mixed_float16')
     model_path = base_folder / 'temp'
     model_path.mkdir(parents=True, exist_ok=True)
 

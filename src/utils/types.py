@@ -34,6 +34,7 @@ class BeatPreprocessingConfig:
 @dataclass
 class DatasetConfig:
     storage_folder = Path('../data/new_datasets')
+    action_word_model_path = storage_folder / 'fasttext.model'  # gensim FastText.KeyedVectors class
     num_classes = {'difficulty': 5,  # ending of the column name: number of classes
                    '_lineLayer': 3, '_lineIndex': 4, '_cutDirection': 9}
     difficulty_mapping = {d: enum for enum, d in enumerate(['Easy', 'Normal', 'Hard', 'Expert', 'ExpertPlus'])}
@@ -49,9 +50,9 @@ class DatasetConfig:
 @dataclass
 class TrainingConfig:
     data_split = (0.0, 0.8, 0.9, 0.99,)
-    AVS_proxy_ratio = 0.3  # Fraction of songs to compute AVS cosine similarity on
-    batch_size = 512
-    label_smoothing = 0.0
+    AVS_proxy_ratio = 0.1  # Fraction of songs to compute AVS cosine similarity on
+    batch_size = 256
+    label_smoothing = 0.1
     use_difficulties = ['Normal', 'Hard', 'Expert']
     categorical_groups = [DatasetConfig.beat_elements, DatasetConfig.beat_elements_previous_prediction,
                           DatasetConfig.categorical]

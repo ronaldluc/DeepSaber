@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import List
 
 import gensim
 import numpy as np
@@ -12,23 +12,8 @@ from tensorflow.python.keras.engine.training import _minimize
 
 from train.metric import create_metrics, CosineDistance
 from train.sequence import BeatmapSequence
+from utils.functions import y2action_word
 from utils.types import Config
-
-
-def y2action_word(y: Dict[str, tf.TensorArray]):
-    """
-    Converts dictionary of action one-hot vectors into a action word representation
-    Example output element: L000_R001
-    """
-    word = []
-
-    for hand in 'lr':
-        word += [hand.upper()]
-        word += [tf.strings.as_string(tf.argmax(y[f'{hand}_{name}'], axis=-1)) for name in
-                 ['lineLayer', 'lineIndex', 'cutDirection']]
-        word += ['_']
-
-    return tf.strings.join(word[:-1])
 
 
 class AVSModel(Model):
@@ -48,7 +33,7 @@ class AVSModel(Model):
             'avs_l2': tf.keras.metrics.MeanSquaredError('avs_l2'),
         }
         self.config = config
-        self.word_model = gensim.models.KeyedVectors.load(str(self.config.dataset.storage_folder / 'fasttext.model'))
+        self.word_model = gensim.models.KeyedVectors.load(str(self.config.dataset.action_word_model_path))
 
     @property
     def metrics(self) -> List:
@@ -132,33 +117,73 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         if col in seq.categorical_cols:
             shape = None, *seq.data[col].shape[2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
-            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=64 // (s - 2),
+            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
                                                                        kernel_size=s,
                                                                        activation='elu',
                                                                        padding='causal',
                                                                        name=names.__next__())(inputs[col])
-                                                         for s in [3, 5, 7]],
+                                                         for s in [3, 5, 7, 9]],
                                                  axis=-1, name=names.__next__(), )
-            per_stream[col] = inputs[col]
+            per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
+            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
+                                                                       kernel_size=s,
+                                                                       activation='elu',
+                                                                       padding='causal',
+                                                                       name=names.__next__())(inputs[col])
+                                                         for s in [3, 5, 7, 9]],
+                                                 axis=-1, name=names.__next__(), )
+            per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
+            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
+                                                                       kernel_size=s,
+                                                                       activation='elu',
+                                                                       padding='causal',
+                                                                       name=names.__next__())(inputs[col])
+                                                         for s in [3, 5, 7, 9]],
+                                                 axis=-1, name=names.__next__(), )
             per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
         if col in seq.regression_cols:
             shape = None, *seq.data[col].shape[2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
-            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=128 // (s - 2),
+            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
                                                                        kernel_size=s,
                                                                        activation='elu',
                                                                        padding='causal',
                                                                        name=names.__next__())(inputs[col])
-                                                         for s in [3, 5, 7]],
+                                                         for s in [3, 5, 7, 9]],
+                                                 axis=-1, name=names.__next__(), )
+            per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
+            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
+                                                                       kernel_size=s,
+                                                                       activation='elu',
+                                                                       padding='causal',
+                                                                       name=names.__next__())(inputs[col])
+                                                         for s in [3, 5, 7, 9]],
                                                  axis=-1, name=names.__next__(), )
             per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
 
     per_stream_list = list(per_stream.values())
     x = layers.concatenate(inputs=per_stream_list, axis=-1, name=names.__next__(), )
+    x = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
+                                                               kernel_size=s,
+                                                               activation='elu',
+                                                               padding='causal',
+                                                               name=names.__next__())(x)
+                                                 for s in [3, 5, 7, 9]],
+                                         axis=-1, name=names.__next__(), )
     x = layers.BatchNormalization(name=names.__next__(), )(x)
+    x = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
+                                                               kernel_size=s,
+                                                               activation='elu',
+                                                               padding='causal',
+                                                               name=names.__next__())(x)
+                                                 for s in [3, 5, 7, 9]],
+                                         axis=-1, name=names.__next__(), )
+    x = layers.BatchNormalization(name=names.__next__(), )(x)
+    x = layers.Dropout(0.4)(x)
+    x = layers.LSTM(512, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
+    x = layers.BatchNormalization(name=names.__next__(), )(x)
+    x = layers.Dropout(0.4)(x)
     x = layers.LSTM(256, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
-    x = layers.BatchNormalization(name=names.__next__(), )(x)
-    x = layers.LSTM(128, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
     x = layers.BatchNormalization(name=names.__next__(), )(x)
 
     outputs = {}
@@ -168,7 +193,8 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
             shape = seq.data[col].shape[-1]
             outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation='softmax'), name=col)(x)
             loss[col] = keras.losses.CategoricalCrossentropy(
-                label_smoothing=tf.cast(config.training.label_smoothing, 'float16'))
+                label_smoothing=tf.cast(config.training.label_smoothing, 'float32'),  # TODO: Enable
+            )
             # does not work with mixed precision and stateful model
         if col in seq.regression_cols:
             shape = seq.data[col].shape[-1]

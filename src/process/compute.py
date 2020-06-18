@@ -122,7 +122,6 @@ def beatmap2beat_df(beatmap: JSON, info: JSON, config: Config) -> pd.DataFrame:
     df = df.loc[df['_type'] != 3]
 
     df = df.sort_values(by=['_time', '_lineLayer'])
-    # df = to_categorical(df)
 
     # Round to 2 decimal places for normalization for block alignment
     df['_time'] = round(df['_time'], 2)
@@ -135,14 +134,7 @@ def beatmap2beat_df(beatmap: JSON, info: JSON, config: Config) -> pd.DataFrame:
 
     out_df = merge_beat_elements(df)
 
-    df = df.set_index('_time')
-    df['hand'] = 'L'
-    df.loc[df['_type'] == 1, 'hand'] = 'R'
-    df['word'] = df['hand'].str.cat([df[x].astype(str) for x in ['_lineLayer', '_lineIndex', '_cutDirection']])
-    df = df.sort_values('word')
-
-    temp = df['word'].groupby(level=0).apply(lambda x: x.str.cat(sep='_'))
-    out_df['word'] = temp
+    out_df['word'] = compute_action_words(df)
 
     check_column_ranges(out_df, config)
 
@@ -151,6 +143,21 @@ def beatmap2beat_df(beatmap: JSON, info: JSON, config: Config) -> pd.DataFrame:
     out_df.index = out_df.index.rename('time')
 
     return out_df
+
+
+def compute_action_words(df):
+    """
+    Transform all beat elements with the same time stamp into one action, represented by a word.
+    Example: [{hand: L, _lineLayer: 0, _lineIndex: 1, _cutDirection: 2},
+              {hand: R, _lineLayer: 2, _lineIndex: 3, _cutDirection: 8}] -> 'L012_R238'
+    """
+    df = df.set_index('_time')
+    df['hand'] = 'L'
+    df.loc[df['_type'] == 1, 'hand'] = 'R'
+    df['word'] = df['hand'].str.cat([df[x].astype(str) for x in ['_lineLayer', '_lineIndex', '_cutDirection']])
+    df = df.sort_values('word')
+    temp = df['word'].groupby(level=0).apply(lambda x: x.str.cat(sep='_'))
+    return temp
 
 
 def check_column_ranges(out_df, config):
@@ -182,7 +189,7 @@ def merge_beat_elements(df: pd.DataFrame):
 
 
 def path2beat_df(beatmap_path, info_path, config: Config) -> pd.DataFrame:
-    with open(info_path) as info_data:
+    with open(info_path) as info_data:  # normalize across old and new version of beatmap files
         info = json.load(info_data)
         if 'beatsPerMinute' in info:
             info['_beatsPerMinute'] = info['beatsPerMinute']
