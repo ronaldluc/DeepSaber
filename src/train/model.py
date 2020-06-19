@@ -12,7 +12,7 @@ from tensorflow.python.keras.engine.training import _minimize
 
 from train.metric import create_metrics, CosineDistance
 from train.sequence import BeatmapSequence
-from utils.functions import y2action_word
+from utils.functions import y2action_word, create_word_mapping
 from utils.types import Config
 
 
@@ -34,6 +34,7 @@ class AVSModel(Model):
         }
         self.config = config
         self.word_model = gensim.models.KeyedVectors.load(str(self.config.dataset.action_word_model_path))
+        self.word_id_dict = create_word_mapping(self.word_modelo)   # TODO: Rename
 
     @property
     def metrics(self) -> List:
@@ -75,9 +76,15 @@ class AVSModel(Model):
     def update_metrics(self, y_pred, y, sample_weight, train=False):
         self.compiled_metrics.update_state(y, y_pred, sample_weight)
 
-        if not train:
+        y_vec, y_pred_vec = None, None
+        if 'word_vec' in y.keys():
+            y_vec = y['word_vec']
+            y_pred_vec = y_pred['word_vec']
+        elif not train and set(y.keys()) >= set(self.config.dataset.beat_elements):
             y_vec = self.avs_embedding(y)
             y_pred_vec = self.avs_embedding(y_pred)
+
+        if y_vec is not None:
             for metric in self.vector_metrics.values():
                 metric.update_state(y_vec, y_pred_vec)
 
@@ -95,6 +102,8 @@ class AVSModel(Model):
         return word_vec
 
     def avs_embedding(self, y):
+        # if 'word_id' in y:    # TODO: Continue
+        #     y_word = self.word_id_dict
         y_word = y2action_word(y)
         y_vec = tf.numpy_function(self.word2word_vec, [y_word], tf.float32)
         return y_vec
@@ -113,11 +122,11 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
     inputs = {}
     per_stream = {}
-    basic_block_size = 32
+    basic_block_size = 128
 
     for col in seq.x_cols:
         if col in seq.categorical_cols:
-            shape = None, *seq.data[col].shape[2:]
+            shape = None, *seq.shapes[col][2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
             per_stream[col] = inputs[col]
             per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
@@ -129,7 +138,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
                                                  axis=-1, name=names.__next__(), )
             per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
         if col in seq.regression_cols:
-            shape = None, *seq.data[col].shape[2:]
+            shape = None, *seq.shapes[col][2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
             per_stream[col] = inputs[col]
             per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
@@ -155,16 +164,16 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     loss = {}
     for col in seq.y_cols:
         if col in seq.categorical_cols:
-            shape = seq.data[col].shape[-1]
+            shape = seq.shapes[col][-1]
             outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation='softmax'), name=col)(x)
             loss[col] = keras.losses.CategoricalCrossentropy(
                 label_smoothing=tf.cast(config.training.label_smoothing, 'float32'),  # TODO: Enable
             )
             # does not work with mixed precision and stateful model
         if col in seq.regression_cols:
-            shape = seq.data[col].shape[-1]
-            outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation='elu'), name=col)(x)
-            loss[col] = 'mae'
+            shape = seq.shapes[col][-1]
+            outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation=None), name=col)(x)
+            loss[col] = 'mse'
 
     if stateful or config.training.AVS_proxy_ratio == 0:
         model = Model(inputs=inputs, outputs=outputs)
@@ -172,7 +181,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         model = AVSModel(inputs=inputs, outputs=outputs, config=config)
 
     # optimizer = keras.optimizers.RMSprop(learning_rate=0.0001)
-    optimizer = keras.optimizers.Adam(learning_rate=0.0005)
+    optimizer = keras.optimizers.Adam(learning_rate=0.002)
     model.compile(
         optimizer=optimizer,
         loss=loss,

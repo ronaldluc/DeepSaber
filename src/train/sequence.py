@@ -1,4 +1,5 @@
 from copy import deepcopy
+from functools import cached_property
 
 import numpy as np
 import pandas as pd
@@ -43,14 +44,11 @@ class BeatmapSequence(Sequence):
         ratio = np.random.beta(0.4, 0.4, (size, 1, 1))  # Mixup: https://arxiv.org/pdf/1710.09412.pdf
 
         for col in self.x_cols | self.y_cols:
-            x = self.data[col][idx * self.batch_size:(idx + 1) * self.batch_size]
+            data_dict[col] = self.data[col][idx * self.batch_size:(idx + 1) * self.batch_size]
 
             if col in self.categorical_cols:    # to categorical
                 num_classes = [num for ending, num in self.config.dataset.num_classes.items() if col.endswith(ending)][0]
-                print(f'{num_classes=}')
-                data_dict[col] = keras.utils.to_categorical(x, num_classes, dtype=bool)
-            else:
-                data_dict[col] = x
+                data_dict[col] = keras.utils.to_categorical(data_dict[col], num_classes, dtype='float32')
 
         for col in self.x_cols | self.y_cols:
             data_dict[col] = ratio * data_dict[col] + (1 - ratio) * data_dict[col][new_order]
@@ -67,6 +65,15 @@ class BeatmapSequence(Sequence):
             self.data[col] = self.data[col][new_order]
 
         pass
+
+    @cached_property
+    def shapes(self):
+        x, y = self[0]
+        shapes = {col: data.shape for col, data in x.items()}
+        shapes.update({col: data.shape for col, data in y.items()})
+
+        return shapes
+
 
     def init_data(self, config: Config):
         """Makes Sequence data representation re-inializable with a different Config"""
@@ -90,9 +97,9 @@ class BeatmapSequence(Sequence):
             if len(self.data[col].shape) < 3:
                 self.data[col] = self.data[col].reshape(*shape, 1)
 
+        # self.original_data = deepcopy(self.data)
+
         # for col in self.categorical_cols & (self.x_cols | self.y_cols):
         #     print(f'Processing {col=}')
         #     num_classes = [num for ending, num in config.dataset.num_classes.items() if col.endswith(ending)][0]
-        #     self.data[col] = keras.utils.to_categorical(self.data[col], num_classes, dtype=bool)
-        print('Duping data')
-        # self.original_data = deepcopy(self.data)
+        #     self.data[col] = keras.utils.to_categorical(self.data[col], num_classes, dtype='float32')

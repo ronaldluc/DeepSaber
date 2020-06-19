@@ -40,3 +40,10 @@ def y2action_word(y: Dict[str, tf.TensorArray]):
         word += ['_']
 
     return tf.strings.join(word[:-1])
+
+
+def create_word_mapping(action_model):
+    word_id = {key: val + 2 for key, val in zip(action_model.vocab.keys(), range(len(action_model.vocab)))}
+    word_id['MASK'] = 0
+    word_id['UNK'] = 1
+    return word_id

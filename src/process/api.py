@@ -4,11 +4,11 @@ import os
 import gensim
 import pandas as pd
 import numpy as np
-from tensorflow import keras
 
 from process.compute import create_ogg_paths, generate_snippets, \
     add_previous_prediction  # split needed for gColab upload
 from process.compute import process_song_folder, create_ogg_caches, remove_ogg_cache
+from utils.functions import create_word_mapping
 from utils.types import Config, Timer
 
 
@@ -68,10 +68,8 @@ def songs2dataset(song_folders, config: Config) -> pd.DataFrame:
     df['word_vec'] = df['word_vec'].map(lambda x: x[0])
     timer('Generated action vectors')
 
-    word_id = {key: val + 2 for key, val in zip(action_model.vocab.keys(), range(len(action_model.vocab)))}
-    word_id['MASK'] = 0
-    word_id['UNK'] = 1
-    df['word_id'] = df['word'].map(lambda word: word_id.get(word, 1))
+    word_id_dict = create_word_mapping(action_model)
+    df['word_id'] = df['word'].map(lambda word: word_id_dict.get(word, 1))
     timer('Generated action ids')
 
     df = df.groupby(['name', 'difficulty']).apply(lambda x: add_previous_prediction(x, config=config))

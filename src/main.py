@@ -113,7 +113,7 @@ def main():
                   callbacks=callbacks,
                   epochs=420,
                   verbose=2,
-                  workers=1,
+                  workers=10,
                   max_queue_size=32,
                   use_multiprocessing=False,
                   )

@@ -64,12 +64,13 @@ class TrainingConfig:
                           DatasetConfig.categorical, ['word_id', 'prev_word_id']]
     # in dataset groups
     regression_groups = [DatasetConfig.audio, DatasetConfig.regression, ['word_vec', 'prev_word_vec']]  # in dataset groups
-    x_groups = [DatasetConfig.beat_elements_previous_prediction, DatasetConfig.categorical,
-                DatasetConfig.audio, DatasetConfig.regression]
-    y_groups = [DatasetConfig.beat_elements]
-    # x_groups = [DatasetConfig.beat_actions_previous_prediction, DatasetConfig.categorical,
+    # x_groups = [DatasetConfig.beat_elements_previous_prediction, DatasetConfig.categorical,
     #             DatasetConfig.audio, DatasetConfig.regression]
+    x_groups = [['prev_word_vec'], DatasetConfig.categorical,
+                DatasetConfig.audio, DatasetConfig.regression]
+    # y_groups = [DatasetConfig.beat_elements]
     # y_groups = [DatasetConfig.beat_actions, DatasetConfig.beat_elements]
+    y_groups = [['word_vec']]
 
 
 @dataclass
