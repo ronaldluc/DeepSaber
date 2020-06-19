@@ -235,7 +235,7 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
                 beatmap_path = os.path.join(folder, beatmap_path[0])
                 df = path2beat_df(beatmap_path, info_path, config)
                 df = join_closest_index(df, mfcc_df, 'mfcc')
-                df = add_previous_prediction(df, config)
+                # df = add_previous_prediction(df, config)  # TODO: Remove
                 df = add_multiindex(df, difficulty, folder_name)
 
                 df_difficulties.append(df)
@@ -257,10 +257,15 @@ def add_multiindex(df, difficulty, folder_name):
 
 
 def add_previous_prediction(df: pd.DataFrame, config: Config):
-    prev_prediction = config.dataset.beat_elements_previous_prediction
-    df[prev_prediction] = df[config.dataset.beat_elements].shift(1)
+    beat_elements_pp = config.dataset.beat_elements_previous_prediction
+    beat_actions_pp = config.dataset.beat_actions_previous_prediction
+    df[beat_elements_pp + beat_actions_pp] = df[config.dataset.beat_elements + config.dataset.beat_actions].shift(1)
     df = df.dropna().copy()
-    df.loc[:, prev_prediction] = df[prev_prediction].astype('int8')
+    df.loc[:, beat_elements_pp] = df[beat_elements_pp].astype('int8')
+
+    # Name and difficulty information is contained in the grouping operation
+    indexes_to_drop = ['name', 'difficulty']
+    df = df.reset_index(level=indexes_to_drop).drop(columns=indexes_to_drop)
     return df
 
 

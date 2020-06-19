@@ -113,77 +113,42 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
     inputs = {}
     per_stream = {}
+    basic_block_size = 32
+
     for col in seq.x_cols:
         if col in seq.categorical_cols:
             shape = None, *seq.data[col].shape[2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
-            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
+            per_stream[col] = inputs[col]
+            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
                                                                        kernel_size=s,
                                                                        activation='elu',
                                                                        padding='causal',
                                                                        name=names.__next__())(inputs[col])
-                                                         for s in [3, 5, 7, 9]],
-                                                 axis=-1, name=names.__next__(), )
-            per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
-            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
-                                                                       kernel_size=s,
-                                                                       activation='elu',
-                                                                       padding='causal',
-                                                                       name=names.__next__())(inputs[col])
-                                                         for s in [3, 5, 7, 9]],
-                                                 axis=-1, name=names.__next__(), )
-            per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
-            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
-                                                                       kernel_size=s,
-                                                                       activation='elu',
-                                                                       padding='causal',
-                                                                       name=names.__next__())(inputs[col])
-                                                         for s in [3, 5, 7, 9]],
+                                                         for s in [3, 5, 7]],
                                                  axis=-1, name=names.__next__(), )
             per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
         if col in seq.regression_cols:
             shape = None, *seq.data[col].shape[2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
-            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
+            per_stream[col] = inputs[col]
+            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
                                                                        kernel_size=s,
                                                                        activation='elu',
                                                                        padding='causal',
                                                                        name=names.__next__())(inputs[col])
-                                                         for s in [3, 5, 7, 9]],
-                                                 axis=-1, name=names.__next__(), )
-            per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
-            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
-                                                                       kernel_size=s,
-                                                                       activation='elu',
-                                                                       padding='causal',
-                                                                       name=names.__next__())(inputs[col])
-                                                         for s in [3, 5, 7, 9]],
+                                                         for s in [3, 5, 7]],
                                                  axis=-1, name=names.__next__(), )
             per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
 
     per_stream_list = list(per_stream.values())
     x = layers.concatenate(inputs=per_stream_list, axis=-1, name=names.__next__(), )
-    x = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
-                                                               kernel_size=s,
-                                                               activation='elu',
-                                                               padding='causal',
-                                                               name=names.__next__())(x)
-                                                 for s in [3, 5, 7, 9]],
-                                         axis=-1, name=names.__next__(), )
-    x = layers.BatchNormalization(name=names.__next__(), )(x)
-    x = layers.concatenate(inputs=[layers.Conv1D(filters=256 // (s - 2),
-                                                               kernel_size=s,
-                                                               activation='elu',
-                                                               padding='causal',
-                                                               name=names.__next__())(x)
-                                                 for s in [3, 5, 7, 9]],
-                                         axis=-1, name=names.__next__(), )
     x = layers.BatchNormalization(name=names.__next__(), )(x)
     x = layers.Dropout(0.4)(x)
-    x = layers.LSTM(512, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
+    x = layers.LSTM(basic_block_size, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
     x = layers.BatchNormalization(name=names.__next__(), )(x)
     x = layers.Dropout(0.4)(x)
-    x = layers.LSTM(256, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
+    x = layers.LSTM(basic_block_size, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
     x = layers.BatchNormalization(name=names.__next__(), )(x)
 
     outputs = {}

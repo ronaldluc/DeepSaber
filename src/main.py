@@ -2,6 +2,7 @@ import random
 from pathlib import Path
 from typing import Tuple
 
+import gensim
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -32,13 +33,10 @@ def generate_datasets(song_folders, config: Config):
         df = songs2dataset(song_folders[split_from:split_to], config=config)
         timer(f'Created {phase} dataset', 1)
 
-        word_model = 0
-        df['word']
-
         check_consistency(df)
 
         config.dataset.storage_folder.mkdir(parents=True, exist_ok=True)
-        df.to_pickle(result_path)
+        df.to_pickle(result_path, protocol=4)   # Protocol 4 for Python 3.6/3.7 compatibility
         timer(f'Pickled {phase} dataset', 1)
 
 
@@ -70,7 +68,7 @@ def main():
     np.random.seed(43)
     random.seed(43)
 
-    base_folder = Path('../data')
+    base_folder = Path('../data/human_beatmaps')
     song_folders = create_song_list(base_folder)
     total = len(song_folders)
     print(f'Found {total} folders')
@@ -78,6 +76,7 @@ def main():
     config = Config()
     config.dataset.storage_folder = base_folder / 'full_datasets'
     config.dataset.storage_folder = base_folder / 'new_datasets'
+    # config.dataset.storage_folder = base_folder / 'test_datasets'
     # config.audio_processing.use_cache = False
 
     # generate_datasets(song_folders, config)
@@ -114,6 +113,9 @@ def main():
                   callbacks=callbacks,
                   epochs=420,
                   verbose=2,
+                  workers=1,
+                  max_queue_size=32,
+                  use_multiprocessing=False,
                   )
         timer('Training ')
 

@@ -3,6 +3,8 @@ from pathlib import Path
 from time import time
 from typing import Union, Mapping, List
 
+import gensim
+
 JSON = Union[str, int, float, bool, None, Mapping[str, 'JSON'], List['JSON']]
 
 
@@ -29,6 +31,7 @@ class BeatPreprocessingConfig:
     snippet_window_skip = 25  # in the number of beats
     beat_elements = ['l_lineLayer', 'l_lineIndex', 'l_cutDirection',
                      'r_lineLayer', 'r_lineIndex', 'r_cutDirection', ]
+    beat_actions = ['word_vec', 'word_id']
 
 
 @dataclass
@@ -36,12 +39,15 @@ class DatasetConfig:
     storage_folder = Path('../data/new_datasets')
     action_word_model_path = storage_folder / 'fasttext.model'  # gensim FastText.KeyedVectors class
     num_classes = {'difficulty': 5,  # ending of the column name: number of classes
-                   '_lineLayer': 3, '_lineIndex': 4, '_cutDirection': 9}
+                   '_lineLayer': 3, '_lineIndex': 4, '_cutDirection': 9,
+                   'word_id': len(gensim.models.KeyedVectors.load(str(action_word_model_path)).vocab) + 2}
     difficulty_mapping = {d: enum for enum, d in enumerate(['Easy', 'Normal', 'Hard', 'Expert', 'ExpertPlus'])}
 
     # dataset groups
     beat_elements = BeatPreprocessingConfig.beat_elements
+    beat_actions = BeatPreprocessingConfig.beat_actions
     beat_elements_previous_prediction = [f'prev_{x}' for x in BeatPreprocessingConfig.beat_elements]
+    beat_actions_previous_prediction = [f'prev_{x}' for x in BeatPreprocessingConfig.beat_actions]
     categorical = ['difficulty', ]
     audio = ['mfcc', ]
     regression = ['prev', 'next', 'part', ]
@@ -55,12 +61,15 @@ class TrainingConfig:
     label_smoothing = 0.1
     use_difficulties = ['Normal', 'Hard', 'Expert']
     categorical_groups = [DatasetConfig.beat_elements, DatasetConfig.beat_elements_previous_prediction,
-                          DatasetConfig.categorical]
+                          DatasetConfig.categorical, ['word_id', 'prev_word_id']]
     # in dataset groups
-    regression_groups = [DatasetConfig.audio, DatasetConfig.regression]  # in dataset groups
+    regression_groups = [DatasetConfig.audio, DatasetConfig.regression, ['word_vec', 'prev_word_vec']]  # in dataset groups
     x_groups = [DatasetConfig.beat_elements_previous_prediction, DatasetConfig.categorical,
                 DatasetConfig.audio, DatasetConfig.regression]
     y_groups = [DatasetConfig.beat_elements]
+    # x_groups = [DatasetConfig.beat_actions_previous_prediction, DatasetConfig.categorical,
+    #             DatasetConfig.audio, DatasetConfig.regression]
+    # y_groups = [DatasetConfig.beat_actions, DatasetConfig.beat_elements]
 
 
 @dataclass
