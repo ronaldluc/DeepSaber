@@ -54,7 +54,7 @@ def generate_beatmap(seq: BeatmapSequence, stateful_model: Model, config: Config
     for i in range(len(seq.df) - 1):
         print(f'\r{i:4}: {time() - start:9.2}', end='', flush=True)
         pred = stateful_model.predict(most_recent)
-        update_next(i, output_names, pred, data, most_recent)
+        update_next(i, output_names, pred, data, most_recent, config)
 
         clip_next_to_closest_existing(i, action_model, data, most_recent)
 
@@ -106,16 +106,22 @@ def predictions2df(data, seq):
 
 
 # @numba.njit()
-def update_next(i, output_names, pred, data, most_recent):
+def update_next(i, output_names, pred, data, most_recent, config: Config):
     # for col, val in zip(output_names, pred):  # TF 2.1
     for col, val in pred.items():  # TF 2.2+
         col = f'prev_{col}'
-        val = softmax(val ** 2, axis=-1)
-        chosen_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten() / np.sum(val))
-        one_hot = np.zeros_like(val)
-        one_hot[:, :, chosen_index] = 1
-        data[col][:, i + 1] = one_hot
-        most_recent[col] = data[col][:, i + 1:i + 2]
+
+        if col in config.training.categorical_groups:
+            val = softmax(val ** 2, axis=-1)
+            chosen_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten() / np.sum(val))
+            one_hot = np.zeros_like(val)
+            one_hot[:, :, chosen_index] = 1
+            data[col][:, i + 1] = one_hot
+            most_recent[col] = data[col][:, i + 1:i + 2]
+        else:   # regression cols
+            data[col][:, i + 1] = val
+            most_recent[col] = data[col][:, i + 1:i + 2]
+
 
 
 def zip_folder(folder_path):
@@ -165,7 +171,7 @@ def create_beatmap_dfs(stateful_model: Model, path: Path, config: Config) -> Dic
         if difficulty not in config.training.use_difficulties:
             continue
         print(f'\nGenerating {difficulty}')
-        seq = BeatmapSequence(sub_df.copy(), config)
+        seq = BeatmapSequence(df=sub_df.copy(), is_train=False, config=config)
 
         beatmap_df = generate_beatmap(seq, stateful_model, config)
         stateful_model.reset_states()

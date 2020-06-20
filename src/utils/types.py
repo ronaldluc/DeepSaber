@@ -56,7 +56,7 @@ class DatasetConfig:
 @dataclass
 class TrainingConfig:
     data_split = (0.0, 0.8, 0.9, 0.99,)
-    AVS_proxy_ratio = 0.1  # Fraction of songs to compute AVS cosine similarity on
+    AVS_proxy_ratio = 0.1  # Fraction of songs to compute AVS cosine similarity if word reconstruction has to be used
     batch_size = 256
     label_smoothing = 0.1
     use_difficulties = ['Normal', 'Hard', 'Expert']
@@ -70,7 +70,7 @@ class TrainingConfig:
     #             DatasetConfig.audio, DatasetConfig.regression]
     # y_groups = [DatasetConfig.beat_elements]
     # y_groups = [DatasetConfig.beat_actions]
-    y_groups = [['word_vec']]
+    y_groups = [['word_id']]
 
 
 @dataclass

@@ -76,7 +76,7 @@ def main():
     config = Config()
     config.dataset.storage_folder = base_folder / 'full_datasets'
     config.dataset.storage_folder = base_folder / 'new_datasets'
-    # config.dataset.storage_folder = base_folder / 'test_datasets'
+    config.dataset.storage_folder = base_folder / 'test_datasets'
     # config.audio_processing.use_cache = False
 
     # generate_datasets(song_folders, config)
@@ -87,9 +87,9 @@ def main():
     train.drop(index='133b', inplace=True, errors='ignore')
     # dataset_stats(train)
 
-    train_seq = BeatmapSequence(train, config)
-    val_seq = BeatmapSequence(val, config)
-    test_seq = BeatmapSequence(test, config)
+    train_seq = BeatmapSequence(df=train, is_train=True, config=config)
+    val_seq = BeatmapSequence(df=val, is_train=False, config=config)
+    test_seq = BeatmapSequence(df=test, is_train=False, config=config)
 
     print(train.reset_index('name')['name'].unique())
 
@@ -111,7 +111,7 @@ def main():
         model.fit(train_seq,
                   validation_data=val_seq,
                   callbacks=callbacks,
-                  epochs=420,
+                  epochs=1,
                   verbose=2,
                   workers=10,
                   max_queue_size=32,

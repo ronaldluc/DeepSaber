@@ -22,13 +22,14 @@ class OnEpochEnd(keras.callbacks.Callback):
 
 class BeatmapSequence(Sequence):
 
-    def __init__(self, df: pd.DataFrame, config: Config):
+    def __init__(self, df: pd.DataFrame, is_train: bool, config: Config):
         df = add_difficulty(df, config)
 
         self.df = df
         self.batch_size = config.training.batch_size
         self.snippet_size = config.beat_preprocessing.snippet_window_length
         self.config = config
+        self.is_train = is_train
 
         self.init_data(config)
 
@@ -38,10 +39,6 @@ class BeatmapSequence(Sequence):
     def __getitem__(self, idx):
         data_dict = {}
 
-        size = min(self.num_snippets, (idx + 1) * self.batch_size) - idx * self.batch_size  # Mixup
-        new_order = np.arange(size)
-        np.random.shuffle(new_order)
-        ratio = np.random.beta(0.4, 0.4, (size, 1, 1)).astype('float16')  # Mixup: https://arxiv.org/pdf/1710.09412.pdf
 
         for col in self.x_cols | self.y_cols:
             data_dict[col] = self.data[col][idx * self.batch_size:(idx + 1) * self.batch_size]
@@ -50,8 +47,14 @@ class BeatmapSequence(Sequence):
                 num_classes = [num for ending, num in self.config.dataset.num_classes.items() if col.endswith(ending)][0]
                 data_dict[col] = keras.utils.to_categorical(data_dict[col], num_classes, dtype='float16')
 
-        for col in self.x_cols | self.y_cols:
-            data_dict[col] = ratio * data_dict[col] + (1 - ratio) * data_dict[col][new_order]
+        if self.is_train:  # Mixup: https://arxiv.org/pdf/1710.09412.pdf
+            size = min(self.num_snippets, (idx + 1) * self.batch_size) - idx * self.batch_size
+            new_order = np.arange(size)
+            np.random.shuffle(new_order)
+            ratio = np.random.beta(0.4, 0.4, (size, 1, 1)).astype('float16')
+
+            for col in self.x_cols | self.y_cols:
+                data_dict[col] = ratio * data_dict[col] + (1 - ratio) * data_dict[col][new_order]
 
         return {col: data_dict[col] for col in self.x_cols}, {col: data_dict[col] for col in self.y_cols}
 

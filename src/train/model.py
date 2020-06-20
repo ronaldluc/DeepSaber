@@ -9,6 +9,7 @@ from tensorflow.keras.models import Model
 from tensorflow.python.eager import backprop
 from tensorflow.python.keras.engine import data_adapter
 from tensorflow.python.keras.engine.training import _minimize
+from tensorflow.python.ops import embedding_ops, math_ops
 
 from train.metric import create_metrics, CosineDistance
 from train.sequence import BeatmapSequence
@@ -35,6 +36,8 @@ class AVSModel(Model):
         self.config = config
         self.word_model = gensim.models.KeyedVectors.load(str(self.config.dataset.action_word_model_path))
         self.word_id_dict = create_word_mapping(self.word_model)  # TODO: Rename
+        self.embeddings = tf.convert_to_tensor(np.concatenate([np.zeros((2, self.word_model.vectors.shape[-1])),
+                                                               self.word_model.vectors]))  # 0: MASK, 1: UNK
 
     @property
     def metrics(self) -> List:
@@ -80,7 +83,7 @@ class AVSModel(Model):
         if 'word_vec' in y.keys():
             y_vec = y['word_vec']
             y_pred_vec = y_pred['word_vec']
-        elif not train and set(y.keys()) >= set(self.config.dataset.beat_elements):
+        elif 'word_id' in y.keys() or (set(y.keys()) >= self.config.dataset.beat_elements and not train):
             y_vec = self.avs_embedding(y)
             y_pred_vec = self.avs_embedding(y_pred)
 
@@ -98,14 +101,19 @@ class AVSModel(Model):
         try:
             word_vec = self.word_model[use_word.flatten()]
         except KeyError:  # Fallback for non-FastText based word embeddings
-            word_vec = np.zeros((np.dot(*use_word.shape), 256), dtype=np.float32)
+            word_vec = np.zeros((np.dot(*use_word.shape), self.word_model.vectors.shape[-1]), dtype=np.float32)
         return word_vec
 
     def avs_embedding(self, y):
-        # if 'word_id' in y:    # TODO: Continue
-        #     y_word = self.word_id_dict
-        y_word = y2action_word(y)
-        y_vec = tf.numpy_function(self.word2word_vec, [y_word], tf.float32)
+        if 'word_id' in y:
+            ids = tf.argmax(y['word_id'], axis=-1)
+            # ids = tf.zeros_like(ids)
+            y_vec = embedding_ops.embedding_lookup_v2(self.embeddings, ids)
+            # tf.print(f'{ids.shape=} {y_vec.shape=} {y["word_id"].shape=}')
+            # tf.print(embedding_ops.embedding_lookup_v2(self.embeddings, [[0, 1]]))
+        else:
+            y_word = y2action_word(y)
+            y_vec = tf.numpy_function(self.word2word_vec, [y_word], tf.float32)
         return y_vec
 
 
@@ -122,22 +130,22 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
     inputs = {}
     per_stream = {}
-    basic_block_size = 64
+    basic_block_size = 256
 
     for col in seq.x_cols:
         if col in seq.categorical_cols:
             shape = None, *seq.shapes[col][2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
             per_stream[col] = inputs[col]
-            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
-                                                                       kernel_size=s,
-                                                                       activation='elu',
-                                                                       padding='causal',
-                                                                       kernel_initializer='lecun_normal',
-                                                                       name=names.__next__())(inputs[col])
-                                                         for s in [3, 5, 7]],
-                                                 axis=-1, name=names.__next__(), )
-            per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
+            # per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
+            #                                                            kernel_size=s,
+            #                                                            activation='elu',
+            #                                                            padding='causal',
+            #                                                            kernel_initializer='lecun_normal',
+            #                                                            name=names.__next__())(inputs[col])
+            #                                              for s in [3, 5, 7]],
+            #                                      axis=-1, name=names.__next__(), )
+            # per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
         if col in seq.regression_cols:
             shape = None, *seq.shapes[col][2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
@@ -156,16 +164,15 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     x = layers.concatenate(inputs=per_stream_list, axis=-1, name=names.__next__(), )
     x = layers.Conv1D(filters=basic_block_size,
                       kernel_size=1,
-                      activation='elu',
+                      activation='relu',
                       padding='causal',
                       kernel_initializer='lecun_normal',
                       name=names.__next__())(x)
     x = layers.BatchNormalization(name=names.__next__(), )(x)
-    x = layers.BatchNormalization(name=names.__next__(), )(x)
-    x = layers.Dropout(0.4)(x)
+    # x = layers.Dropout(0.4)(x)
     x = layers.LSTM(basic_block_size, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
     x = layers.BatchNormalization(name=names.__next__(), )(x)
-    x = layers.Dropout(0.4)(x)
+    # x = layers.Dropout(0.4)(x)
     x = layers.LSTM(basic_block_size, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
     x = layers.BatchNormalization(name=names.__next__(), )(x)
 
@@ -190,7 +197,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         model = AVSModel(inputs=inputs, outputs=outputs, config=config)
 
     # optimizer = keras.optimizers.RMSprop(learning_rate=0.0001)
-    optimizer = keras.optimizers.Adam(learning_rate=0.004)
+    optimizer = keras.optimizers.Adam(learning_rate=0.005)
     model.compile(
         optimizer=optimizer,
         loss=loss,
