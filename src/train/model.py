@@ -34,7 +34,7 @@ class AVSModel(Model):
         }
         self.config = config
         self.word_model = gensim.models.KeyedVectors.load(str(self.config.dataset.action_word_model_path))
-        self.word_id_dict = create_word_mapping(self.word_modelo)   # TODO: Rename
+        self.word_id_dict = create_word_mapping(self.word_model)  # TODO: Rename
 
     @property
     def metrics(self) -> List:
@@ -97,7 +97,7 @@ class AVSModel(Model):
         use_word = word[:use_len]
         try:
             word_vec = self.word_model[use_word.flatten()]
-        except KeyError:    # Fallback for non-FastText based word embeddings
+        except KeyError:  # Fallback for non-FastText based word embeddings
             word_vec = np.zeros((np.dot(*use_word.shape), 256), dtype=np.float32)
         return word_vec
 
@@ -122,7 +122,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
     inputs = {}
     per_stream = {}
-    basic_block_size = 128
+    basic_block_size = 64
 
     for col in seq.x_cols:
         if col in seq.categorical_cols:
@@ -133,6 +133,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
                                                                        kernel_size=s,
                                                                        activation='elu',
                                                                        padding='causal',
+                                                                       kernel_initializer='lecun_normal',
                                                                        name=names.__next__())(inputs[col])
                                                          for s in [3, 5, 7]],
                                                  axis=-1, name=names.__next__(), )
@@ -145,6 +146,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
                                                                        kernel_size=s,
                                                                        activation='elu',
                                                                        padding='causal',
+                                                                       kernel_initializer='lecun_normal',
                                                                        name=names.__next__())(inputs[col])
                                                          for s in [3, 5, 7]],
                                                  axis=-1, name=names.__next__(), )
@@ -152,6 +154,13 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
     per_stream_list = list(per_stream.values())
     x = layers.concatenate(inputs=per_stream_list, axis=-1, name=names.__next__(), )
+    x = layers.Conv1D(filters=basic_block_size,
+                      kernel_size=1,
+                      activation='elu',
+                      padding='causal',
+                      kernel_initializer='lecun_normal',
+                      name=names.__next__())(x)
+    x = layers.BatchNormalization(name=names.__next__(), )(x)
     x = layers.BatchNormalization(name=names.__next__(), )(x)
     x = layers.Dropout(0.4)(x)
     x = layers.LSTM(basic_block_size, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
@@ -181,7 +190,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         model = AVSModel(inputs=inputs, outputs=outputs, config=config)
 
     # optimizer = keras.optimizers.RMSprop(learning_rate=0.0001)
-    optimizer = keras.optimizers.Adam(learning_rate=0.002)
+    optimizer = keras.optimizers.Adam(learning_rate=0.004)
     model.compile(
         optimizer=optimizer,
         loss=loss,

@@ -41,14 +41,14 @@ class BeatmapSequence(Sequence):
         size = min(self.num_snippets, (idx + 1) * self.batch_size) - idx * self.batch_size  # Mixup
         new_order = np.arange(size)
         np.random.shuffle(new_order)
-        ratio = np.random.beta(0.4, 0.4, (size, 1, 1))  # Mixup: https://arxiv.org/pdf/1710.09412.pdf
+        ratio = np.random.beta(0.4, 0.4, (size, 1, 1)).astype('float16')  # Mixup: https://arxiv.org/pdf/1710.09412.pdf
 
         for col in self.x_cols | self.y_cols:
             data_dict[col] = self.data[col][idx * self.batch_size:(idx + 1) * self.batch_size]
 
             if col in self.categorical_cols:    # to categorical
                 num_classes = [num for ending, num in self.config.dataset.num_classes.items() if col.endswith(ending)][0]
-                data_dict[col] = keras.utils.to_categorical(data_dict[col], num_classes, dtype='float32')
+                data_dict[col] = keras.utils.to_categorical(data_dict[col], num_classes, dtype='float16')
 
         for col in self.x_cols | self.y_cols:
             data_dict[col] = ratio * data_dict[col] + (1 - ratio) * data_dict[col][new_order]
@@ -90,7 +90,7 @@ class BeatmapSequence(Sequence):
         self.data = {col: np.array(df[col]
                                    .to_numpy()
                                    .reshape(shape)
-                                   .tolist(), dtype='float32')
+                                   .tolist(), dtype='float16')
                      for col in self.x_cols | self.y_cols}
 
         for col in self.data:
