@@ -8,17 +8,15 @@ from typing import Dict, Tuple
 from zipfile import ZipFile
 
 import gensim
-import numba
 import numpy as np
 import pandas as pd
-import re
 from scipy.special import softmax
 from tensorflow.keras import Model
 
+from process.api import df_post_processing
 from process.compute import process_song_folder
 from train.sequence import BeatmapSequence
-from utils.functions import y2action_word
-from utils.types import Config, JSON, Timer
+from utils.types import Config, JSON
 
 
 def create_info(bpm):
@@ -44,49 +42,49 @@ def create_info(bpm):
     return info
 
 
-def generate_beatmap(seq: BeatmapSequence, stateful_model: Model, config: Config):
-    data = seq.data
-    most_recent = {col: seq.data[col][:, 0:1] for col in stateful_model.input_names}  # initial beat
-    output_names = [f'prev_{name}' for name in stateful_model.output_names]     # For TF 2.1 compatibility
-    action_model = gensim.models.KeyedVectors.load(str(config.dataset.action_word_model_path))
+def generate_beatmap(seq: BeatmapSequence, stateful_model: Model, action_model: gensim.models.KeyedVectors,
+                     word_id_dict: Dict[str, int], config: Config):
+    most_recent = {col: seq[0][0][col][:, 0:1] for col in stateful_model.input_names}  # initial beat
+    output_names = [f'prev_{name}' for name in stateful_model.output_names]  # For TF 2.1 compatibility
 
     start = time()
-    for i in range(len(seq.df) - 1):
+    for i in range(len(seq.df) - 400):
         print(f'\r{i:4}: {time() - start:9.2}', end='', flush=True)
         pred = stateful_model.predict(most_recent)
-        update_next(i, output_names, pred, data, most_recent, config)
+        update_next(i, output_names, pred, most_recent, seq, config)
 
-        clip_next_to_closest_existing(i, action_model, data, most_recent)
+        if set(stateful_model.output_names) >= set(config.dataset.beat_elements):
+            clip_next_to_closest_existing(i, action_model, seq, word_id_dict)
 
-    beatmap_df = predictions2df(data, seq)
-    beatmap_df = append_last_prediction(beatmap_df, most_recent)
+        # get last action in the correct format
+        most_recent = {col: seq[0][0][col][:, i + 1:i + 2] for col in stateful_model.input_names}
+
+    beatmap_df = predictions2df(seq)
+    # beatmap_df = append_last_prediction(beatmap_df, most_recent)    # TODO: Remove if unnecessary
 
     for col in stateful_model.output_names:
         beatmap_df[col] = beatmap_df[f'prev_{col}']
 
-    return beatmap_df
+    return beatmap_df[stateful_model.output_names]  # output only generated columns
 
 
-def clip_next_to_closest_existing(i, action_model, data, most_recent):
+def clip_next_to_closest_existing(i, action_model, seq: BeatmapSequence, word_id_dict):
     word = []
     for hand in 'lr':
         word += [hand.upper()]
-        word += [np.argmax(data[f'prev_{hand}_{name}'][:, i + 1], axis=-1).astype(str)[0] for name in
+        word += [np.argmax(seq.data[f'prev_{hand}_{name}'][:, i + 1], axis=-1).astype(str)[0] for name in
                  ['lineLayer', 'lineIndex', 'cutDirection']]
         word += ['_']
-    # data['prev_word'][:, i + 1] = ''.join(word[:-1])  # TODO: Add, once the DF is enhanced
-    # data['prev_word_vec'][:, i + 1] = action_model[data['prev_word'][:, i + 1]]
-    # closest_word_str = action_model.similar_by_vector(data['prev_word_vec'][:, i + 1], topn=1)
-    closest_word_str = action_model.similar_by_vector(action_model[''.join(word[:-1])],
+    prev_word = ''.join(word[:-1])
+    closest_word_str = action_model.similar_by_vector(action_model[prev_word],
                                                       topn=1, restrict_vocab=500)[0][0]
+    seq.data['prev_word_id'][:, i + 1] = word_id_dict[closest_word_str]
+    seq.data['prev_word_vec'][:, i + 1] = action_model[closest_word_str]
     action_dim_values = *closest_word_str[1:4], *closest_word_str[-3:]  # extract first and last beat elements
     for (hand, dim), chosen_index in zip(product('lr', ['lineLayer', 'lineIndex', 'cutDirection']),
                                          action_dim_values):
         col = f'prev_{hand}_{dim}'
-        one_hot = np.zeros_like(data[col][:, i + 1])
-        one_hot[:, int(chosen_index)] = 1
-        data[col][:, i + 1] = one_hot
-        most_recent[col] = data[col][:, i + 1:i + 2]
+        seq.data[col][:, i + 1] = chosen_index
 
 
 def append_last_prediction(beatmap_df, most_recent):
@@ -97,31 +95,26 @@ def append_last_prediction(beatmap_df, most_recent):
     return beatmap_df
 
 
-def predictions2df(data, seq):
+def predictions2df(seq):
     beatmap_df = seq.df
-    for col, val in data.items():
+    for col, val in seq.data.items():
         beatmap_df[col] = np.split(val.flatten(), val.shape[1])
     beatmap_df = beatmap_df.reset_index('name').drop(columns='name')
     return beatmap_df
 
 
 # @numba.njit()
-def update_next(i, output_names, pred, data, most_recent, config: Config):
+def update_next(i, output_names, pred, most_recent, seq: BeatmapSequence, config: Config):
     # for col, val in zip(output_names, pred):  # TF 2.1
     for col, val in pred.items():  # TF 2.2+
         col = f'prev_{col}'
 
-        if col in config.training.categorical_groups:
+        if col in seq.categorical_cols:
             val = softmax(val ** 2, axis=-1)
             chosen_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten() / np.sum(val))
-            one_hot = np.zeros_like(val)
-            one_hot[:, :, chosen_index] = 1
-            data[col][:, i + 1] = one_hot
-            most_recent[col] = data[col][:, i + 1:i + 2]
-        else:   # regression cols
-            data[col][:, i + 1] = val
-            most_recent[col] = data[col][:, i + 1:i + 2]
-
+            seq.data[col][:, i + 1] = chosen_index
+        else:  # regression cols
+            seq.data[col][:, i + 1] = val
 
 
 def zip_folder(folder_path):
@@ -147,9 +140,10 @@ def update_generated_metadata(gen_folder, beatmap_folder, config):
             json.dump(info, wf)
 
 
-def save_generated_beatmaps(gen_folder, beatmap_dfs, config):
+def save_generated_beatmaps(gen_folder, beatmap_dfs, action_model: gensim.models.KeyedVectors,
+                            word_id_dict: Dict[str, int], config):
     for difficulty, df in beatmap_dfs.items():
-        beatmap = df2beatmap(df, config)
+        beatmap = df2beatmap(df, action_model, word_id_dict, config)
         with open(gen_folder / f'{difficulty}.dat', 'w') as wf:
             json.dump(beatmap, wf)
 
@@ -160,8 +154,10 @@ def copy_folder_contents(in_folder, out_folder):
             copy(file, out_folder)
 
 
-def create_beatmap_dfs(stateful_model: Model, path: Path, config: Config) -> Dict[str, pd.DataFrame]:
+def create_beatmap_dfs(stateful_model: Model, action_model: gensim.models.KeyedVectors,
+                       word_id_dict: Dict[str, int], path: Path, config: Config) -> Dict[str, pd.DataFrame]:
     df = process_song_folder(str(path), config)
+    df = df_post_processing(df, config)
 
     config.beat_preprocessing.snippet_window_length = len(df)
     config.training.batch_size = 1
@@ -173,14 +169,16 @@ def create_beatmap_dfs(stateful_model: Model, path: Path, config: Config) -> Dic
         print(f'\nGenerating {difficulty}')
         seq = BeatmapSequence(df=sub_df.copy(), is_train=False, config=config)
 
-        beatmap_df = generate_beatmap(seq, stateful_model, config)
+        beatmap_df = generate_beatmap(seq, stateful_model, action_model,
+                                      word_id_dict, config)
         stateful_model.reset_states()
 
         output[difficulty] = beatmap_df
     return output
 
 
-def df2beatmap(df: pd.DataFrame, config: Config, bpm: int = 60, events: Tuple = ()) -> JSON:
+def df2beatmap(df: pd.DataFrame, action_model: gensim.models.KeyedVectors,
+               word_id_dict: Dict[str, int], config: Config, bpm: int = 60, events: Tuple = ()) -> JSON:
     beatmap = {
         '_version': '2.0.0',
         '_BPMChanges': [],
@@ -188,36 +186,59 @@ def df2beatmap(df: pd.DataFrame, config: Config, bpm: int = 60, events: Tuple = 
         '_events': events,
     }
 
+    inverse_word_id_dict = {val: key for key, val in word_id_dict.items()}
+    if 'word_id' in df.columns:
+        df['word_id'] = np.array(df['word_id'].to_list()).flatten()
+        word = df['word_id'].map(lambda word_id: inverse_word_id_dict[word_id])
+        beatmap['_notes'] += word_ser2json(word)
+    elif 'word_vec' in df.columns:
+        word = df['word_vec'].map(lambda vec: action_model.similar_by_vector(vec, topn=1, restrict_vocab=500)[0][0])
+        beatmap['_notes'] += word_ser2json(word)
+    else:
+        beatmap['_notes'] += double_beat_element2json(df, config)
+
+    return beatmap
+
+
+def double_beat_element2json(df, config):
+    notes = []
     plain_col_names = [x[2:] for x in config.dataset.beat_elements if x[0] == 'l' and 'cutDirection' not in x]
-    partially_equal_beat_elements = [df[f'l_{col}'].map(np.ndarray.argmax)
-                                     == df[f'r_{col}'].map(np.ndarray.argmax)
+    partially_equal_beat_elements = [df[f'l_{col}'].astype(int)
+                                     == df[f'r_{col}'].astype(int)
                                      for col in plain_col_names]
     equal_beat_elements = reduce(lambda x, y: x & y, partially_equal_beat_elements)
-
     df['equal_beat_elements'] = False
     df.loc[equal_beat_elements, 'equal_beat_elements'] = True
     df['even'] = False
     df.loc[::2, 'even'] = True
-
     df.loc[equal_beat_elements & df['even'], [f'r_{x}' for x in plain_col_names]] = np.nan
     df.loc[equal_beat_elements & ~df['even'], [f'l_{x}' for x in plain_col_names]] = np.nan
-
     for type_num, hand in [[0, 'l'], [1, 'r']]:
         cols = [x for x in df.columns if x[0] == hand]
 
         df_t = pd.DataFrame(index=df.index)
-        df_t['_time'] = df.index
+        df_t['_time'] = df_t.index
         df_t['_type'] = type_num
 
         df_t[cols] = df[cols]
         df_t = df_t.dropna()
 
         for col in cols:
-            df_t[col] = np.argmax(np.array(df_t[col].to_list()), axis=1)
+            df_t[col] = np.array(df_t[col].to_list()).flatten()
 
         df_t = df_t.rename(columns={x: x[1:] for x in cols})
 
-        beatmap['_notes'] += df_t.to_dict('records')
+        notes += df_t.to_dict('records')
+    return notes
 
-    # data2JSON Done!
-    return beatmap
+
+def word_ser2json(word: pd.Series) -> Dict:
+    word.str.split('_').explode()
+    df_t = pd.DataFrame(word.str.split('_').explode().str.split('').tolist(),
+                        columns=['drop', 'hand', '_lineLayer', '_lineIndex', '_cutDirection', 'drop'])
+    df_t['_time'] = df_t.index
+    df_t['_type'] = 0
+    df_t.loc[df_t['hand'] == 'R', '_type'] = 1
+    df_t = df_t.drop(columns=['hand', 'drop'])
+    df_t = df_t.astype(int)
+    return df_t.to_dict('records')

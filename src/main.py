@@ -2,7 +2,6 @@ import random
 from pathlib import Path
 from typing import Tuple
 
-import gensim
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -90,8 +89,6 @@ def main():
     train_seq = BeatmapSequence(df=train, is_train=True, config=config)
     val_seq = BeatmapSequence(df=val, is_train=False, config=config)
     test_seq = BeatmapSequence(df=test, is_train=False, config=config)
-
-    print(train.reset_index('name')['name'].unique())
 
     # keras.mixed_precision.experimental.set_policy('mixed_float16')
     model_path = base_folder / 'temp'

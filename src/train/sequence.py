@@ -1,4 +1,3 @@
-from copy import deepcopy
 from functools import cached_property
 
 import numpy as np
@@ -39,12 +38,12 @@ class BeatmapSequence(Sequence):
     def __getitem__(self, idx):
         data_dict = {}
 
-
         for col in self.x_cols | self.y_cols:
             data_dict[col] = self.data[col][idx * self.batch_size:(idx + 1) * self.batch_size]
 
-            if col in self.categorical_cols:    # to categorical
-                num_classes = [num for ending, num in self.config.dataset.num_classes.items() if col.endswith(ending)][0]
+            if col in self.categorical_cols:  # to categorical
+                num_classes = [num for ending, num in self.config.dataset.num_classes.items() if col.endswith(ending)][
+                    0]
                 data_dict[col] = keras.utils.to_categorical(data_dict[col], num_classes, dtype='float16')
 
         if self.is_train:  # Mixup: https://arxiv.org/pdf/1710.09412.pdf
@@ -77,7 +76,6 @@ class BeatmapSequence(Sequence):
 
         return shapes
 
-
     def init_data(self, config: Config):
         """Makes Sequence data representation re-inializable with a different Config"""
         df = self.df
@@ -94,7 +92,7 @@ class BeatmapSequence(Sequence):
                                    .to_numpy()
                                    .reshape(shape)
                                    .tolist(), dtype='float16')
-                     for col in self.x_cols | self.y_cols}
+                     for col in self.categorical_cols | self.regression_cols}
 
         for col in self.data:
             if len(self.data[col].shape) < 3:

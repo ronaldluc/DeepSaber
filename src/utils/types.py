@@ -62,7 +62,7 @@ class TrainingConfig:
     use_difficulties = ['Normal', 'Hard', 'Expert']
     categorical_groups = [DatasetConfig.beat_elements, DatasetConfig.beat_elements_previous_prediction,
                           DatasetConfig.categorical, ['word_id', 'prev_word_id']]
-    # in dataset groups
+    # in dataset groups List[List[str]]
     regression_groups = [DatasetConfig.audio, DatasetConfig.regression, ['word_vec', 'prev_word_vec']]  # in dataset groups
     x_groups = [DatasetConfig.beat_elements_previous_prediction, DatasetConfig.categorical,
                 DatasetConfig.audio, DatasetConfig.regression]
@@ -70,7 +70,7 @@ class TrainingConfig:
     #             DatasetConfig.audio, DatasetConfig.regression]
     # y_groups = [DatasetConfig.beat_elements]
     # y_groups = [DatasetConfig.beat_actions]
-    y_groups = [['word_id']]
+    y_groups = [['word_vec']]
 
 
 @dataclass

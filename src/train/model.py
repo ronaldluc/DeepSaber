@@ -9,7 +9,7 @@ from tensorflow.keras.models import Model
 from tensorflow.python.eager import backprop
 from tensorflow.python.keras.engine import data_adapter
 from tensorflow.python.keras.engine.training import _minimize
-from tensorflow.python.ops import embedding_ops, math_ops
+from tensorflow.python.ops import embedding_ops
 
 from train.metric import create_metrics, CosineDistance
 from train.sequence import BeatmapSequence
@@ -83,7 +83,7 @@ class AVSModel(Model):
         if 'word_vec' in y.keys():
             y_vec = y['word_vec']
             y_pred_vec = y_pred['word_vec']
-        elif 'word_id' in y.keys() or (set(y.keys()) >= self.config.dataset.beat_elements and not train):
+        elif 'word_id' in y.keys() or (set(y.keys()) >= set(self.config.dataset.beat_elements) and not train):
             y_vec = self.avs_embedding(y)
             y_pred_vec = self.avs_embedding(y_pred)
 
