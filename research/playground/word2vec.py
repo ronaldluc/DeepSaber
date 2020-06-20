@@ -179,7 +179,7 @@ def resume_training(model, corpus_path=None):
     # and `new vocabulary words <online_w2v_tutorial.ipynb>`_:
     #
     model.build_vocab(sentences, update=True)
-    model.train(sentences, total_examples=model.corpus_count, epochs=model.iter)
+    model.is_train(sentences, total_examples=model.corpus_count, epochs=model.iter)
     # cleaning up temporary file
     ###############################################################################
     # You may need to tweak the ``total_words`` parameter to ``wordvec()``,

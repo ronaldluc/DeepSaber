@@ -69,7 +69,7 @@ def songs2dataset(song_folders, config: Config) -> pd.DataFrame:
     timer('Generated action vectors')
 
     word_id_dict = create_word_mapping(action_model)
-    df['word_id'] = df['word'].map(lambda word: word_id_dict.get(word, 1))
+    df['word_id'] = df['word'].map(lambda word: word_id_dict.get(word, 1))  # 0: MASK, 1: UNK
     timer('Generated action ids')
 
     df = df.groupby(['name', 'difficulty']).apply(lambda x: add_previous_prediction(x, config=config))
