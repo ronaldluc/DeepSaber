@@ -1,18 +1,23 @@
 import json
 from functools import reduce
+from itertools import product
 from pathlib import Path
 from shutil import copy
 from time import time
 from typing import Dict, Tuple
 from zipfile import ZipFile
 
+import gensim
 import numba
 import numpy as np
 import pandas as pd
+import re
+from scipy.special import softmax
 from tensorflow.keras import Model
 
 from process.compute import process_song_folder
 from train.sequence import BeatmapSequence
+from utils.functions import y2action_word
 from utils.types import Config, JSON, Timer
 
 
@@ -43,12 +48,15 @@ def generate_beatmap(seq: BeatmapSequence, stateful_model: Model, config: Config
     data = seq.data
     most_recent = {col: seq.data[col][:, 0:1] for col in stateful_model.input_names}  # initial beat
     output_names = [f'prev_{name}' for name in stateful_model.output_names]     # For TF 2.1 compatibility
+    action_model = gensim.models.KeyedVectors.load(str(config.dataset.action_word_model_path))
 
     start = time()
     for i in range(len(seq.df) - 1):
         print(f'\r{i:4}: {time() - start:9.2}', end='', flush=True)
         pred = stateful_model.predict(most_recent)
         update_next(i, output_names, pred, data, most_recent)
+
+        clip_next_to_closest_existing(i, action_model, data, most_recent)
 
     beatmap_df = predictions2df(data, seq)
     beatmap_df = append_last_prediction(beatmap_df, most_recent)
@@ -57,6 +65,28 @@ def generate_beatmap(seq: BeatmapSequence, stateful_model: Model, config: Config
         beatmap_df[col] = beatmap_df[f'prev_{col}']
 
     return beatmap_df
+
+
+def clip_next_to_closest_existing(i, action_model, data, most_recent):
+    word = []
+    for hand in 'lr':
+        word += [hand.upper()]
+        word += [np.argmax(data[f'prev_{hand}_{name}'][:, i + 1], axis=-1).astype(str)[0] for name in
+                 ['lineLayer', 'lineIndex', 'cutDirection']]
+        word += ['_']
+    # data['prev_word'][:, i + 1] = ''.join(word[:-1])  # TODO: Add, once the DF is enhanced
+    # data['prev_word_vec'][:, i + 1] = action_model[data['prev_word'][:, i + 1]]
+    # closest_word_str = action_model.similar_by_vector(data['prev_word_vec'][:, i + 1], topn=1)
+    closest_word_str = action_model.similar_by_vector(action_model[''.join(word[:-1])],
+                                                      topn=1, restrict_vocab=500)[0][0]
+    action_dim_values = *closest_word_str[1:4], *closest_word_str[-3:]  # extract first and last beat elements
+    for (hand, dim), chosen_index in zip(product('lr', ['lineLayer', 'lineIndex', 'cutDirection']),
+                                         action_dim_values):
+        col = f'prev_{hand}_{dim}'
+        one_hot = np.zeros_like(data[col][:, i + 1])
+        one_hot[:, int(chosen_index)] = 1
+        data[col][:, i + 1] = one_hot
+        most_recent[col] = data[col][:, i + 1:i + 2]
 
 
 def append_last_prediction(beatmap_df, most_recent):
@@ -80,10 +110,10 @@ def update_next(i, output_names, pred, data, most_recent):
     # for col, val in zip(output_names, pred):  # TF 2.1
     for col, val in pred.items():  # TF 2.2+
         col = f'prev_{col}'
-        val = val ** 2
-        chose_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten() / np.sum(val))
+        val = softmax(val ** 2, axis=-1)
+        chosen_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten() / np.sum(val))
         one_hot = np.zeros_like(val)
-        one_hot[:, :, chose_index] = 1
+        one_hot[:, :, chosen_index] = 1
         data[col][:, i + 1] = one_hot
         most_recent[col] = data[col][:, i + 1:i + 2]
 
@@ -129,7 +159,6 @@ def create_beatmap_dfs(stateful_model: Model, path: Path, config: Config) -> Dic
 
     config.beat_preprocessing.snippet_window_length = len(df)
     config.training.batch_size = 1
-    # stateful_model = None
     output = {}
 
     for difficulty, sub_df in df.groupby('difficulty'):

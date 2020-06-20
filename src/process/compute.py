@@ -122,7 +122,6 @@ def beatmap2beat_df(beatmap: JSON, info: JSON, config: Config) -> pd.DataFrame:
     df = df.loc[df['_type'] != 3]
 
     df = df.sort_values(by=['_time', '_lineLayer'])
-    # df = to_categorical(df)
 
     # Round to 2 decimal places for normalization for block alignment
     df['_time'] = round(df['_time'], 2)
@@ -135,14 +134,7 @@ def beatmap2beat_df(beatmap: JSON, info: JSON, config: Config) -> pd.DataFrame:
 
     out_df = merge_beat_elements(df)
 
-    df = df.set_index('_time')
-    df['hand'] = 'L'
-    df.loc[df['_type'] == 1, 'hand'] = 'R'
-    df['word'] = df['hand'].str.cat([df[x].astype(str) for x in ['_lineLayer', '_lineIndex', '_cutDirection']])
-    df = df.sort_values('word')
-
-    temp = df['word'].groupby(level=0).apply(lambda x: x.str.cat(sep='_'))
-    out_df['word'] = temp
+    out_df['word'] = compute_action_words(df)
 
     check_column_ranges(out_df, config)
 
@@ -151,6 +143,21 @@ def beatmap2beat_df(beatmap: JSON, info: JSON, config: Config) -> pd.DataFrame:
     out_df.index = out_df.index.rename('time')
 
     return out_df
+
+
+def compute_action_words(df):
+    """
+    Transform all beat elements with the same time stamp into one action, represented by a word.
+    Example: [{hand: L, _lineLayer: 0, _lineIndex: 1, _cutDirection: 2},
+              {hand: R, _lineLayer: 2, _lineIndex: 3, _cutDirection: 8}] -> 'L012_R238'
+    """
+    df = df.set_index('_time')
+    df['hand'] = 'L'
+    df.loc[df['_type'] == 1, 'hand'] = 'R'
+    df['word'] = df['hand'].str.cat([df[x].astype(str) for x in ['_lineLayer', '_lineIndex', '_cutDirection']])
+    df = df.sort_values('word')
+    temp = df['word'].groupby(level=0).apply(lambda x: x.str.cat(sep='_'))
+    return temp
 
 
 def check_column_ranges(out_df, config):
@@ -182,7 +189,7 @@ def merge_beat_elements(df: pd.DataFrame):
 
 
 def path2beat_df(beatmap_path, info_path, config: Config) -> pd.DataFrame:
-    with open(info_path) as info_data:
+    with open(info_path) as info_data:  # normalize across old and new version of beatmap files
         info = json.load(info_data)
         if 'beatsPerMinute' in info:
             info['_beatsPerMinute'] = info['beatsPerMinute']
@@ -228,7 +235,7 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
                 beatmap_path = os.path.join(folder, beatmap_path[0])
                 df = path2beat_df(beatmap_path, info_path, config)
                 df = join_closest_index(df, mfcc_df, 'mfcc')
-                df = add_previous_prediction(df, config)
+                # df = add_previous_prediction(df, config)  # TODO: Remove
                 df = add_multiindex(df, difficulty, folder_name)
 
                 df_difficulties.append(df)
@@ -250,10 +257,15 @@ def add_multiindex(df, difficulty, folder_name):
 
 
 def add_previous_prediction(df: pd.DataFrame, config: Config):
-    prev_prediction = config.dataset.beat_elements_previous_prediction
-    df[prev_prediction] = df[config.dataset.beat_elements].shift(1)
+    beat_elements_pp = config.dataset.beat_elements_previous_prediction
+    beat_actions_pp = config.dataset.beat_actions_previous_prediction
+    df[beat_elements_pp + beat_actions_pp] = df[config.dataset.beat_elements + config.dataset.beat_actions].shift(1)
     df = df.dropna().copy()
-    df.loc[:, prev_prediction] = df[prev_prediction].astype('int8')
+    df.loc[:, beat_elements_pp] = df[beat_elements_pp].astype('int8')
+
+    # Name and difficulty information is contained in the grouping operation
+    indexes_to_drop = ['name', 'difficulty']
+    df = df.reset_index(level=indexes_to_drop).drop(columns=indexes_to_drop)
     return df
 
 

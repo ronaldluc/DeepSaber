@@ -1,5 +1,8 @@
+from typing import Dict
+
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 
 from utils.types import Config
 
@@ -21,3 +24,26 @@ def check_consistency(df: pd.DataFrame):
                              f' and first row of type {type(df[col].iloc[0])}')
 
     return True
+
+
+def y2action_word(y: Dict[str, tf.TensorArray]):
+    """
+    Converts dictionary of action one-hot vectors into a action word representation
+    Example output element: L000_R001
+    """
+    word = []
+
+    for hand in 'lr':
+        word += [hand.upper()]
+        word += [tf.strings.as_string(tf.argmax(y[f'{hand}_{name}'], axis=-1)) for name in
+                 ['lineLayer', 'lineIndex', 'cutDirection']]
+        word += ['_']
+
+    return tf.strings.join(word[:-1])
+
+
+def create_word_mapping(action_model):
+    word_id = {key: val + 2 for key, val in zip(action_model.vocab.keys(), range(len(action_model.vocab)))}
+    word_id['MASK'] = 0
+    word_id['UNK'] = 1
+    return word_id
