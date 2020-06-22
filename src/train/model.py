@@ -130,49 +130,65 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
     inputs = {}
     per_stream = {}
-    basic_block_size = 256
+    basic_block_size = 512
 
     for col in seq.x_cols:
         if col in seq.categorical_cols:
             shape = None, *seq.shapes[col][2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
-            per_stream[col] = inputs[col]
-            # per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
-            #                                                            kernel_size=s,
-            #                                                            activation='elu',
-            #                                                            padding='causal',
-            #                                                            kernel_initializer='lecun_normal',
-            #                                                            name=names.__next__())(inputs[col])
-            #                                              for s in [3, 5, 7]],
-            #                                      axis=-1, name=names.__next__(), )
-            # per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
+            per_stream[f'{col}_orig'] = inputs[col]
+            # per_stream[col] = inputs[col]
+            # for _ in range(3):
+            #     per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
+            #                                                                kernel_size=s,
+            #                                                                activation='relu',
+            #                                                                padding='causal',
+            #                                                                kernel_initializer='lecun_normal',
+            #                                                                name=names.__next__())(per_stream[col])
+            #                                                  for s in [3, 5, 7]],
+            #                                          axis=-1, name=names.__next__(), )
+            #     per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
+            #     per_stream[col] = layers.SpatialDropout1D(0.2)(per_stream[col])
         if col in seq.regression_cols:
             shape = None, *seq.shapes[col][2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
-            per_stream[col] = inputs[col]
-            per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
-                                                                       kernel_size=s,
-                                                                       activation='elu',
-                                                                       padding='causal',
-                                                                       kernel_initializer='lecun_normal',
-                                                                       name=names.__next__())(inputs[col])
-                                                         for s in [3, 5, 7]],
-                                                 axis=-1, name=names.__next__(), )
-            per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
+            per_stream[f'{col}_orig'] = inputs[col]
+            # per_stream[col] = inputs[col]
+            # for _ in range(3):
+            #     per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
+            #                                                                kernel_size=s,
+            #                                                                activation='relu',
+            #                                                                padding='causal',
+            #                                                                kernel_initializer='lecun_normal',
+            #                                                                name=names.__next__())(per_stream[col])
+            #                                                  for s in [3, 5, 7]],
+            #                                          axis=-1, name=names.__next__(), )
+            #     per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
+            #     per_stream[col] = layers.SpatialDropout1D(0.2)(per_stream[col])
 
     per_stream_list = list(per_stream.values())
     x = layers.concatenate(inputs=per_stream_list, axis=-1, name=names.__next__(), )
-    x = layers.Conv1D(filters=basic_block_size,
-                      kernel_size=1,
-                      activation='relu',
-                      padding='causal',
-                      kernel_initializer='lecun_normal',
-                      name=names.__next__())(x)
-    x = layers.BatchNormalization(name=names.__next__(), )(x)
+    # x = layers.Conv1D(filters=basic_block_size,
+    #                   kernel_size=1,
+    #                   activation='relu',
+    #                   padding='causal',
+    #                   kernel_initializer='lecun_normal',
+    #                   name=names.__next__())(x)
+    # skip = x
+    # for _ in range(3):
+    #     x = layers.Conv1D(filters=basic_block_size,
+    #                       kernel_size=1,
+    #                       activation='relu',
+    #                       padding='causal',
+    #                       kernel_initializer='lecun_normal',
+    #                       name=names.__next__())(x)
+    #     x = layers.BatchNormalization(name=names.__next__(), )(x)
+    #     x = layers.SpatialDropout1D(0.2)(x)
+    # x = layers.concatenate(inputs=[skip, x], axis=-1, name=names.__next__(), )
     # x = layers.Dropout(0.4)(x)
     x = layers.LSTM(basic_block_size, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
     x = layers.BatchNormalization(name=names.__next__(), )(x)
-    # x = layers.Dropout(0.4)(x)
+    x = layers.Dropout(0.4)(x)
     x = layers.LSTM(basic_block_size, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
     x = layers.BatchNormalization(name=names.__next__(), )(x)
 
@@ -197,7 +213,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         model = AVSModel(inputs=inputs, outputs=outputs, config=config)
 
     # optimizer = keras.optimizers.RMSprop(learning_rate=0.0001)
-    optimizer = keras.optimizers.Adam(learning_rate=0.005)
+    optimizer = keras.optimizers.Adam(learning_rate=0.01)
     model.compile(
         optimizer=optimizer,
         loss=loss,

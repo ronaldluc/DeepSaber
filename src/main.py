@@ -1,3 +1,4 @@
+import gc
 import random
 from pathlib import Path
 from typing import Tuple
@@ -67,35 +68,39 @@ def main():
     np.random.seed(43)
     random.seed(43)
 
-    base_folder = Path('../data/human_beatmaps')
-    song_folders = create_song_list(base_folder)
+    base_folder = Path('../data')
+    song_folders = create_song_list(base_folder / 'human_beatmaps')
     total = len(song_folders)
     print(f'Found {total} folders')
 
     config = Config()
     config.dataset.storage_folder = base_folder / 'full_datasets'
     config.dataset.storage_folder = base_folder / 'new_datasets'
-    config.dataset.storage_folder = base_folder / 'test_datasets'
+    # config.dataset.storage_folder = base_folder / 'test_datasets'
     # config.audio_processing.use_cache = False
 
     # generate_datasets(song_folders, config)
 
     train, val, test = load_datasets(config)
+    print(train.columns)
 
     # Ensure this song is excluded from the training data for hand tasting
     train.drop(index='133b', inplace=True, errors='ignore')
     # dataset_stats(train)
 
-    train_seq = BeatmapSequence(df=train, is_train=True, config=config)
+    train_seq = BeatmapSequence(df=train, is_train=config.training.use_mixup, config=config)
     val_seq = BeatmapSequence(df=val, is_train=False, config=config)
     test_seq = BeatmapSequence(df=test, is_train=False, config=config)
+
+    del train, val, test
+    gc.collect()
 
     # keras.mixed_precision.experimental.set_policy('mixed_float16')
     model_path = base_folder / 'temp'
     model_path.mkdir(parents=True, exist_ok=True)
 
     train = True
-    # train = False
+    train = False
     if train:
         model = create_model(train_seq, False, config)
         model.summary()
@@ -108,10 +113,10 @@ def main():
         model.fit(train_seq,
                   validation_data=val_seq,
                   callbacks=callbacks,
-                  epochs=1,
+                  epochs=80,
                   verbose=2,
                   workers=10,
-                  max_queue_size=32,
+                  max_queue_size=16,
                   use_multiprocessing=False,
                   )
         timer('Training ')
@@ -121,10 +126,11 @@ def main():
     stateful_model = keras.models.load_model(model_path / 'stateful_model.keras')
     print('Evaluation')
 
-    beatmap_folder = base_folder / 'new_dataformat' / '133b'
+    beatmap_folder = base_folder / 'human_beatmaps' / 'new_dataformat' / '133b'
 
     output_folder = base_folder / 'testing' / 'generated_songs'
 
+    stateful_model.summary()
     generate_complete_beatmaps(beatmap_folder, output_folder, stateful_model, config)
 
 

@@ -42,16 +42,47 @@ def create_info(bpm):
     return info
 
 
-def generate_beatmap(seq: BeatmapSequence, stateful_model: Model, action_model: gensim.models.KeyedVectors,
+def generate_beatmap(beatmap_df: pd.DataFrame, seq: BeatmapSequence, stateful_model: Model,
+                     action_model: gensim.models.KeyedVectors,
                      word_id_dict: Dict[str, int], config: Config):
     most_recent = {col: seq[0][0][col][:, 0:1] for col in stateful_model.input_names}  # initial beat
     output_names = [f'prev_{name}' for name in stateful_model.output_names]  # For TF 2.1 compatibility
+    reverse_word_id_dict = {val: key for key, val in word_id_dict.items()}
+    # TODO: Reset the whole seq.data columns except for the first action
 
     start = time()
-    for i in range(len(seq.df) - 400):
-        print(f'\r{i:4}: {time() - start:9.2}', end='', flush=True)
+    total_len = len(beatmap_df) - 1
+    for i in range(len(beatmap_df) - 1):
+        elapsed = time() - start
+        print(f'\r{i:4}: {int(elapsed):3} / ~{int(elapsed * total_len / (i + 1)):3} s', end='', flush=True)
         pred = stateful_model.predict(most_recent)
+
+        # word_vec to word_id prob for softmax
+        if 'word_vec' in stateful_model.output_names:
+            closest_words = action_model.similar_by_vector(pred['word_vec'], topn=3, restrict_vocab=5000)
+
+            pred['word_id'] = np.zeros((1, 1, seq.shapes['word_id']))
+            for word, distance in closest_words:
+                pred['word_id'][word_id_dict[word]] = distance
+
         update_next(i, output_names, pred, most_recent, seq, config)
+
+        # update all representations, to make interesting models possible without data leaking.
+        if 'word_id' in pred.keys():  # `word_id` is the prefered action representation
+            word_str = reverse_word_id_dict[int(seq.data['prev_word_id'][:, i + 1])]
+            seq.data['prev_word_vec'][:, i + 1] = action_model[word_str]
+            word_str2per_attribute(i, word_str, seq)
+        elif 'word_vec' in pred.keys():
+            closest_word_str = action_model.similar_by_vector(seq.data['prev_word_vec'][:, i + 1],
+                                                              topn=1, restrict_vocab=500)[0][0]
+            seq.data['prev_word_id'][:, i + 1] = word_id_dict[closest_word_str]
+            word_str2per_attribute(i, closest_word_str, seq)
+        else:
+            prev_word = per_attribute2word_str(i, seq)
+            seq.data['prev_word_vec'][:, i + 1] = action_model[prev_word]
+            closest_word_str = action_model.similar_by_vector(seq.data['prev_word_vec'][:, i + 1],
+                                                              topn=1, restrict_vocab=500)[0][0]
+            seq.data['prev_word_id'][:, i + 1] = word_id_dict[closest_word_str]
 
         if set(stateful_model.output_names) >= set(config.dataset.beat_elements):
             clip_next_to_closest_existing(i, action_model, seq, word_id_dict)
@@ -59,7 +90,7 @@ def generate_beatmap(seq: BeatmapSequence, stateful_model: Model, action_model: 
         # get last action in the correct format
         most_recent = {col: seq[0][0][col][:, i + 1:i + 2] for col in stateful_model.input_names}
 
-    beatmap_df = predictions2df(seq)
+    beatmap_df = predictions2df(beatmap_df, seq)
     # beatmap_df = append_last_prediction(beatmap_df, most_recent)    # TODO: Remove if unnecessary
 
     for col in stateful_model.output_names:
@@ -68,7 +99,7 @@ def generate_beatmap(seq: BeatmapSequence, stateful_model: Model, action_model: 
     return beatmap_df[stateful_model.output_names]  # output only generated columns
 
 
-def clip_next_to_closest_existing(i, action_model, seq: BeatmapSequence, word_id_dict):
+def per_attribute2word_str(i, seq):
     word = []
     for hand in 'lr':
         word += [hand.upper()]
@@ -76,10 +107,21 @@ def clip_next_to_closest_existing(i, action_model, seq: BeatmapSequence, word_id
                  ['lineLayer', 'lineIndex', 'cutDirection']]
         word += ['_']
     prev_word = ''.join(word[:-1])
+    return prev_word
+
+
+def clip_next_to_closest_existing(i, action_model, seq: BeatmapSequence, word_id_dict):
+    prev_word = per_attribute2word_str(i, seq)
     closest_word_str = action_model.similar_by_vector(action_model[prev_word],
                                                       topn=1, restrict_vocab=500)[0][0]
     seq.data['prev_word_id'][:, i + 1] = word_id_dict[closest_word_str]
     seq.data['prev_word_vec'][:, i + 1] = action_model[closest_word_str]
+    closest_word_str = seq.data['prev_word']
+
+    word_str2per_attribute(i, closest_word_str, seq)
+
+
+def word_str2per_attribute(i, closest_word_str, seq):
     action_dim_values = *closest_word_str[1:4], *closest_word_str[-3:]  # extract first and last beat elements
     for (hand, dim), chosen_index in zip(product('lr', ['lineLayer', 'lineIndex', 'cutDirection']),
                                          action_dim_values):
@@ -95,8 +137,7 @@ def append_last_prediction(beatmap_df, most_recent):
     return beatmap_df
 
 
-def predictions2df(seq):
-    beatmap_df = seq.df
+def predictions2df(beatmap_df, seq):
     for col, val in seq.data.items():
         beatmap_df[col] = np.split(val.flatten(), val.shape[1])
     beatmap_df = beatmap_df.reset_index('name').drop(columns='name')
@@ -110,8 +151,10 @@ def update_next(i, output_names, pred, most_recent, seq: BeatmapSequence, config
         col = f'prev_{col}'
 
         if col in seq.categorical_cols:
-            val = softmax(val ** 2, axis=-1)
-            chosen_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten() / np.sum(val))
+            # val = softmax(val ** 100, axis=-1)
+            val = np.log(val) / np.max([config.generation.temperature, 1e-6])
+            val = softmax(val, axis=-1)
+            chosen_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten() / np.sum(val))  # categorical dist
             seq.data[col][:, i + 1] = chosen_index
         else:  # regression cols
             seq.data[col][:, i + 1] = val
@@ -167,9 +210,10 @@ def create_beatmap_dfs(stateful_model: Model, action_model: gensim.models.KeyedV
         if difficulty not in config.training.use_difficulties:
             continue
         print(f'\nGenerating {difficulty}')
-        seq = BeatmapSequence(df=sub_df.copy(), is_train=False, config=config)
+        seq = BeatmapSequence(df=sub_df, is_train=False, config=config)
 
-        beatmap_df = generate_beatmap(seq, stateful_model, action_model,
+        # beatmap_df = sub_df.copy()    # bypass the generation
+        beatmap_df = generate_beatmap(sub_df.copy(), seq, stateful_model, action_model,
                                       word_id_dict, config)
         stateful_model.reset_states()
 
@@ -185,10 +229,11 @@ def df2beatmap(df: pd.DataFrame, action_model: gensim.models.KeyedVectors,
         '_notes': [],
         '_events': events,
     }
-
+    df.index = df.index.to_frame()['time']  # only time from the multiindex is needed
     inverse_word_id_dict = {val: key for key, val in word_id_dict.items()}
     if 'word_id' in df.columns:
         df['word_id'] = np.array(df['word_id'].to_list()).flatten()
+        df = df.loc[df['word_id'] > 1]
         word = df['word_id'].map(lambda word_id: inverse_word_id_dict[word_id])
         beatmap['_notes'] += word_ser2json(word)
     elif 'word_vec' in df.columns:
@@ -233,12 +278,13 @@ def double_beat_element2json(df, config):
 
 
 def word_ser2json(word: pd.Series) -> Dict:
-    word.str.split('_').explode()
-    df_t = pd.DataFrame(word.str.split('_').explode().str.split('').tolist(),
-                        columns=['drop', 'hand', '_lineLayer', '_lineIndex', '_cutDirection', 'drop'])
-    df_t['_time'] = df_t.index
+    word = word.str.split('_').explode()
+    df_t = pd.DataFrame(word.str.split('').tolist(),
+                        columns=['drop', 'hand', '_lineLayer', '_lineIndex', '_cutDirection', 'drop'], )
+
     df_t['_type'] = 0
     df_t.loc[df_t['hand'] == 'R', '_type'] = 1
     df_t = df_t.drop(columns=['hand', 'drop'])
     df_t = df_t.astype(int)
+    df_t['_time'] = word.index
     return df_t.to_dict('records')

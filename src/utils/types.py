@@ -57,20 +57,32 @@ class DatasetConfig:
 class TrainingConfig:
     data_split = (0.0, 0.8, 0.9, 0.99,)
     AVS_proxy_ratio = 0.1  # Fraction of songs to compute AVS cosine similarity if word reconstruction has to be used
-    batch_size = 256
+    batch_size = 512
     label_smoothing = 0.1
+    use_mixup = True
+    mixup_alpha = 0.3
     use_difficulties = ['Normal', 'Hard', 'Expert']
     categorical_groups = [DatasetConfig.beat_elements, DatasetConfig.beat_elements_previous_prediction,
                           DatasetConfig.categorical, ['word_id', 'prev_word_id']]
     # in dataset groups List[List[str]]
-    regression_groups = [DatasetConfig.audio, DatasetConfig.regression, ['word_vec', 'prev_word_vec']]  # in dataset groups
-    x_groups = [DatasetConfig.beat_elements_previous_prediction, DatasetConfig.categorical,
-                DatasetConfig.audio, DatasetConfig.regression]
+    regression_groups = [DatasetConfig.audio, DatasetConfig.regression,
+                         ['word_vec', 'prev_word_vec']]  # in dataset groups
+    x_groups = [
+        # DatasetConfig.beat_elements_previous_prediction,
+        # ['prev_word_id'],
+        ['prev_word_vec'],
+        DatasetConfig.categorical, DatasetConfig.audio, DatasetConfig.regression]
     # x_groups = [['prev_word_vec'], DatasetConfig.beat_actions_previous_prediction, DatasetConfig.categorical,
     #             DatasetConfig.audio, DatasetConfig.regression]
     # y_groups = [DatasetConfig.beat_elements]
     # y_groups = [DatasetConfig.beat_actions]
-    y_groups = [['word_vec']]
+    y_groups = [['word_id'], ]
+    # y_groups = [['word_vec'], ]
+
+
+@dataclass
+class GenerationConfig:
+    temperature = 0.7
 
 
 @dataclass
@@ -80,6 +92,7 @@ class Config:
     beat_preprocessing = BeatPreprocessingConfig()
     dataset = DatasetConfig()
     training = TrainingConfig()
+    generation = GenerationConfig()
 
 
 class Timer:
