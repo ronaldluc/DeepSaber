@@ -130,7 +130,8 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
     inputs = {}
     per_stream = {}
-    basic_block_size = 512
+    # basic_block_size = 512
+    basic_block_size = 768
 
     for col in seq.x_cols:
         if col in seq.categorical_cols:
@@ -154,6 +155,15 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
             per_stream[f'{col}_orig'] = inputs[col]
             # per_stream[col] = inputs[col]
+
+            per_stream[f'{col}_orig'] = layers.Conv1D(filters=basic_block_size,
+                                                      kernel_size=1,
+                                                      activation='relu',
+                                                      padding='causal',
+                                                      kernel_initializer='lecun_normal',
+                                                      name=names.__next__())(per_stream[f'{col}_orig'])
+            per_stream[f'{col}_orig'] = layers.BatchNormalization(name=names.__next__(), )(per_stream[f'{col}_orig'])
+            per_stream[f'{col}_orig'] = layers.SpatialDropout1D(0.2, name=names.__next__(), )(per_stream[f'{col}_orig'])
             # for _ in range(3):
             #     per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
             #                                                                kernel_size=s,

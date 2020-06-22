@@ -83,6 +83,7 @@ class TrainingConfig:
 @dataclass
 class GenerationConfig:
     temperature = 0.7
+    restrict_vocab = 500  # use only the first # actions. `None` == use all
 
 
 @dataclass

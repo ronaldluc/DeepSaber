@@ -64,9 +64,10 @@ def create_training_data(X, groupby, config: Config):
 
 
 def main():
-    tf.random.set_seed(43)
-    np.random.seed(43)
-    random.seed(43)
+    seed = 43  # random, non-fine tuned seed
+    tf.random.set_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
 
     base_folder = Path('../data')
     song_folders = create_song_list(base_folder / 'human_beatmaps')
@@ -100,7 +101,7 @@ def main():
     model_path.mkdir(parents=True, exist_ok=True)
 
     train = True
-    train = False
+    # train = False
     if train:
         model = create_model(train_seq, False, config)
         model.summary()
@@ -113,7 +114,7 @@ def main():
         model.fit(train_seq,
                   validation_data=val_seq,
                   callbacks=callbacks,
-                  epochs=80,
+                  epochs=400,
                   verbose=2,
                   workers=10,
                   max_queue_size=16,
