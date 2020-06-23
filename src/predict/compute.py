@@ -134,7 +134,10 @@ def word_str2per_attribute(i, closest_word_str, seq):
     for (hand, dim), chosen_index in zip(product('lr', ['lineLayer', 'lineIndex', 'cutDirection']),
                                          action_dim_values):
         col = f'prev_{hand}_{dim}'
-        seq.data[col][:, i + 1] = chosen_index
+        if closest_word_str == 'UNK':
+            seq.data[col][:, i + 1] = seq.data[col][:, i]
+        else:
+            seq.data[col][:, i + 1] = chosen_index
 
 
 def append_last_prediction(beatmap_df, most_recent):

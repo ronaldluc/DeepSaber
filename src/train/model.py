@@ -107,10 +107,7 @@ class AVSModel(Model):
     def avs_embedding(self, y):
         if 'word_id' in y:
             ids = tf.argmax(y['word_id'], axis=-1)
-            # ids = tf.zeros_like(ids)
             y_vec = embedding_ops.embedding_lookup_v2(self.embeddings, ids)
-            # tf.print(f'{ids.shape=} {y_vec.shape=} {y["word_id"].shape=}')
-            # tf.print(embedding_ops.embedding_lookup_v2(self.embeddings, [[0, 1]]))
         else:
             y_word = y2action_word(y)
             y_vec = tf.numpy_function(self.word2word_vec, [y_word], tf.float32)
@@ -131,7 +128,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     inputs = {}
     per_stream = {}
     # basic_block_size = 512
-    basic_block_size = 768
+    basic_block_size = 1024
 
     for col in seq.x_cols:
         if col in seq.categorical_cols:
@@ -163,7 +160,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
                                                       kernel_initializer='lecun_normal',
                                                       name=names.__next__())(per_stream[f'{col}_orig'])
             per_stream[f'{col}_orig'] = layers.BatchNormalization(name=names.__next__(), )(per_stream[f'{col}_orig'])
-            per_stream[f'{col}_orig'] = layers.SpatialDropout1D(0.2, name=names.__next__(), )(per_stream[f'{col}_orig'])
+            per_stream[f'{col}_orig'] = layers.SpatialDropout1D(0.3, name=names.__next__(), )(per_stream[f'{col}_orig'])
             # for _ in range(3):
             #     per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
             #                                                                kernel_size=s,

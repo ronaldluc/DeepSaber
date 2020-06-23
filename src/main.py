@@ -101,7 +101,7 @@ def main():
     model_path.mkdir(parents=True, exist_ok=True)
 
     train = True
-    # train = False
+    train = False
     if train:
         model = create_model(train_seq, False, config)
         model.summary()
@@ -121,6 +121,7 @@ def main():
                   use_multiprocessing=False,
                   )
         timer('Training ')
+        model.evaluate(test_seq)
 
         save_model(model, model_path, train_seq, config)
 

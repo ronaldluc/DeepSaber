@@ -60,7 +60,7 @@ class TrainingConfig:
     batch_size = 512
     label_smoothing = 0.1
     use_mixup = True
-    mixup_alpha = 0.3
+    mixup_alpha = 0.4
     use_difficulties = ['Normal', 'Hard', 'Expert']
     categorical_groups = [DatasetConfig.beat_elements, DatasetConfig.beat_elements_previous_prediction,
                           DatasetConfig.categorical, ['word_id', 'prev_word_id']]
