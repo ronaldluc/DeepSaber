@@ -1,4 +1,3 @@
-from copy import deepcopy
 from functools import cached_property
 
 import numpy as np
@@ -25,33 +24,34 @@ class BeatmapSequence(Sequence):
     def __init__(self, df: pd.DataFrame, is_train: bool, config: Config):
         df = add_difficulty(df, config)
 
-        self.df = df
+        self.df_len = len(df)
         self.batch_size = config.training.batch_size
         self.snippet_size = config.beat_preprocessing.snippet_window_length
         self.config = config
         self.is_train = is_train
 
-        self.init_data(config)
+        self.init_data(df, config)
 
     def __len__(self):
-        return int(np.ceil(len(self.df) / float(self.batch_size) / float(self.snippet_size)))
+        return int(np.ceil(self.df_len / float(self.batch_size) / float(self.snippet_size)))
 
     def __getitem__(self, idx):
         data_dict = {}
 
-
         for col in self.x_cols | self.y_cols:
             data_dict[col] = self.data[col][idx * self.batch_size:(idx + 1) * self.batch_size]
 
-            if col in self.categorical_cols:    # to categorical
-                num_classes = [num for ending, num in self.config.dataset.num_classes.items() if col.endswith(ending)][0]
-                data_dict[col] = keras.utils.to_categorical(data_dict[col], num_classes, dtype='float16')
+            if col in self.categorical_cols:  # to categorical
+                num_classes = [num for ending, num in self.config.dataset.num_classes.items() if col.endswith(ending)][
+                    0]
+                data_dict[col] = keras.utils.to_categorical(data_dict[col], num_classes, dtype='float32')
 
         if self.is_train:  # Mixup: https://arxiv.org/pdf/1710.09412.pdf
             size = min(self.num_snippets, (idx + 1) * self.batch_size) - idx * self.batch_size
             new_order = np.arange(size)
             np.random.shuffle(new_order)
-            ratio = np.random.beta(0.4, 0.4, (size, 1, 1)).astype('float16')
+            ratio = np.random.beta(self.config.training.mixup_alpha, self.config.training.mixup_alpha,
+                                   (size, 1, 1)).astype('float32')
 
             for col in self.x_cols | self.y_cols:
                 data_dict[col] = ratio * data_dict[col] + (1 - ratio) * data_dict[col][new_order]
@@ -62,12 +62,8 @@ class BeatmapSequence(Sequence):
         """Mirror horizontally"""
         new_order = np.arange(self.num_snippets)
         np.random.shuffle(new_order)
-        # ratio = np.random.beta(0.4, 0.4, (self.num_snippets, 1, 1))     # Mixup: https://arxiv.org/pdf/1710.09412.pdf
         for col in self.data:
-            # self.data[col] = ratio * self.original_data[col] + (1 - ratio) * self.original_data[col][new_order]
             self.data[col] = self.data[col][new_order]
-
-        pass
 
     @cached_property
     def shapes(self):
@@ -77,10 +73,8 @@ class BeatmapSequence(Sequence):
 
         return shapes
 
-
-    def init_data(self, config: Config):
+    def init_data(self, df, config: Config):
         """Makes Sequence data representation re-inializable with a different Config"""
-        df = self.df
         self.num_snippets = max(1, len(df) // self.snippet_size)
         shape = self.num_snippets, min(len(df), self.snippet_size)
         # shape == (number of snippets, snippet size)
@@ -93,16 +87,9 @@ class BeatmapSequence(Sequence):
         self.data = {col: np.array(df[col]
                                    .to_numpy()
                                    .reshape(shape)
-                                   .tolist(), dtype='float16')
-                     for col in self.x_cols | self.y_cols}
+                                   .tolist(), dtype='float32')
+                     for col in self.categorical_cols | self.regression_cols}
 
         for col in self.data:
             if len(self.data[col].shape) < 3:
                 self.data[col] = self.data[col].reshape(*shape, 1)
-
-        # self.original_data = deepcopy(self.data)
-
-        # for col in self.categorical_cols & (self.x_cols | self.y_cols):
-        #     print(f'Processing {col=}')
-        #     num_classes = [num for ending, num in config.dataset.num_classes.items() if col.endswith(ending)][0]
-        #     self.data[col] = keras.utils.to_categorical(self.data[col], num_classes, dtype='float32')

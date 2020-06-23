@@ -2,8 +2,8 @@ import multiprocessing
 import os
 
 import gensim
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from process.compute import create_ogg_paths, generate_snippets, \
     add_previous_prediction  # split needed for gColab upload
@@ -61,22 +61,24 @@ def songs2dataset(song_folders, config: Config) -> pd.DataFrame:
     df = pd.concat(songs)
     timer('Concatenated songs')
 
-    action_model = gensim.models.KeyedVectors.load(str(config.dataset.action_word_model_path))
-    timer('Loaded action model')
-
-    df['word_vec'] = np.vsplit(action_model[df['word'].values].astype('float16'), len(df))
-    df['word_vec'] = df['word_vec'].map(lambda x: x[0])
-    timer('Generated action vectors')
-
-    word_id_dict = create_word_mapping(action_model)
-    df['word_id'] = df['word'].map(lambda word: word_id_dict.get(word, 1))  # 0: MASK, 1: UNK
-    timer('Generated action ids')
-
-    df = df.groupby(['name', 'difficulty']).apply(lambda x: add_previous_prediction(x, config=config))
-    timer('Added previous predictions')
+    df = df_post_processing(df, config)
 
     df = df.groupby(['name', 'difficulty']).apply(lambda x: generate_snippets(x, config=config))
     timer('Snippets generated')
+    return df
+
+
+def df_post_processing(df, config):
+    action_model = gensim.models.KeyedVectors.load(str(config.dataset.action_word_model_path))
+
+    df['word_vec'] = np.vsplit(action_model[df['word'].values].astype('float16'), len(df))
+    df['word_vec'] = df['word_vec'].map(lambda x: x[0])
+
+    word_id_dict = create_word_mapping(action_model)
+    df['word_id'] = df['word'].map(lambda word: word_id_dict.get(word, 1))  # 0: MASK, 1: UNK
+
+    df = df.groupby(['name', 'difficulty']).apply(lambda x: add_previous_prediction(x, config=config))
+
     return df
 
 # if __name__ == '__main__':

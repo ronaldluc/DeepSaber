@@ -235,7 +235,6 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
                 beatmap_path = os.path.join(folder, beatmap_path[0])
                 df = path2beat_df(beatmap_path, info_path, config)
                 df = join_closest_index(df, mfcc_df, 'mfcc')
-                # df = add_previous_prediction(df, config)  # TODO: Remove
                 df = add_multiindex(df, difficulty, folder_name)
 
                 df_difficulties.append(df)

@@ -1,20 +1,22 @@
 from datetime import datetime
 
+import numpy as np
 from tensorflow import keras as K
 
 from train.sequence import BeatmapSequence, OnEpochEnd
 from utils.types import Config
-import numpy as np
 
 
 def create_callbacks(train_seq: BeatmapSequence, config: Config):
     logdir = f'../data/logdir1/model_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}'
     callbacks = [
         K.callbacks.TensorBoard(logdir, histogram_freq=0),
-        # K.callbacks.ReduceLROnPlateau(monitor='loss', min_delta=0.001, factor=0.7, patience=8, min_lr=0.00005,
+        # K.callbacks.ReduceLROnPlateau(monitor='val_loss', min_delta=0.001, factor=4.2, patience=8, min_lr=0.00005,
         #                               verbose=1, cooldown=3),
-        ForgivingEarlyStopping(monitor='val_avs_dist', max_forgiveness=0.003, patience=20, verbose=0, mode='auto',
-                               baseline=None, restore_best_weights=True),
+        # ForgivingEarlyStopping(monitor='val_avs_dist', max_forgiveness=0.003, patience=8, verbose=0, mode='auto',
+        #                        baseline=None, restore_best_weights=True),
+        K.callbacks.EarlyStopping(monitor='val_avs_dist', min_delta=0.001, patience=4, verbose=0, mode='auto',
+                                  baseline=None, restore_best_weights=True),
         OnEpochEnd([train_seq]),
     ]
 
@@ -80,22 +82,22 @@ class ForgivingEarlyStopping(K.callbacks.EarlyStopping):
     def on_epoch_end(self, epoch, logs=None):
         current = self.get_monitor_value(logs)
         if current is None:
-          return
+            return
         if self.monitor_op(current - self.min_delta, self.best):
-          self.best = current
-          self.wait = 0
-          if self.restore_best_weights:
-            self.best_weights = self.model.get_weights()
+            self.best = current
+            self.wait = 0
+            if self.restore_best_weights:
+                self.best_weights = self.model.get_weights()
         elif self.max_forgiveness and self.monitor_op(current - self.max_forgiveness, self.best):
             self.wait += 0.0
         else:
-          self.wait += 1
-          if self.wait >= self.patience:
-            self.stopped_epoch = epoch
-            self.model.stop_training = True
-            if self.restore_best_weights:
-              if self.verbose > 0:
-                print('Restoring model weights from the end of the best epoch.')
-              self.model.set_weights(self.best_weights)
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.stopped_epoch = epoch
+                self.model.stop_training = True
+                if self.restore_best_weights:
+                    if self.verbose > 0:
+                        print('Restoring model weights from the end of the best epoch.')
+                    self.model.set_weights(self.best_weights)
 
         current = self.get_monitor_value(logs)
