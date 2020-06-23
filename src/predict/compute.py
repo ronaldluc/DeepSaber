@@ -134,7 +134,7 @@ def word_str2per_attribute(i, closest_word_str, seq):
     for (hand, dim), chosen_index in zip(product('lr', ['lineLayer', 'lineIndex', 'cutDirection']),
                                          action_dim_values):
         col = f'prev_{hand}_{dim}'
-        if closest_word_str == 'UNK':
+        if closest_word_str == 'UNK' or closest_word_str == 'MASK':
             seq.data[col][:, i + 1] = seq.data[col][:, i]
         else:
             seq.data[col][:, i + 1] = chosen_index
