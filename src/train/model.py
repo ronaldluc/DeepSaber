@@ -128,7 +128,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     inputs = {}
     per_stream = {}
     # basic_block_size = 512
-    basic_block_size = 1024
+    basic_block_size = 512
 
     for col in seq.x_cols:
         if col in seq.categorical_cols:
@@ -153,14 +153,14 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
             per_stream[f'{col}_orig'] = inputs[col]
             # per_stream[col] = inputs[col]
 
-            per_stream[f'{col}_orig'] = layers.Conv1D(filters=basic_block_size,
-                                                      kernel_size=1,
-                                                      activation='relu',
-                                                      padding='causal',
-                                                      kernel_initializer='lecun_normal',
-                                                      name=names.__next__())(per_stream[f'{col}_orig'])
-            per_stream[f'{col}_orig'] = layers.BatchNormalization(name=names.__next__(), )(per_stream[f'{col}_orig'])
-            per_stream[f'{col}_orig'] = layers.SpatialDropout1D(0.3, name=names.__next__(), )(per_stream[f'{col}_orig'])
+            # per_stream[f'{col}_orig'] = layers.Conv1D(filters=basic_block_size,
+            #                                           kernel_size=1,
+            #                                           activation='relu',
+            #                                           padding='causal',
+            #                                           kernel_initializer='lecun_normal',
+            #                                           name=names.__next__())(per_stream[f'{col}_orig'])
+            # per_stream[f'{col}_orig'] = layers.BatchNormalization(name=names.__next__(), )(per_stream[f'{col}_orig'])
+            # per_stream[f'{col}_orig'] = layers.SpatialDropout1D(0.3, name=names.__next__(), )(per_stream[f'{col}_orig'])
             # for _ in range(3):
             #     per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
             #                                                                kernel_size=s,
@@ -228,3 +228,14 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     )
 
     return model
+
+
+def save_model(model, model_path, train_seq, config):
+    keras.mixed_precision.experimental.set_policy('float32')
+    config.training.batch_size = 1
+    stateful_model = create_model(train_seq, True, config)
+    plain_model = keras.Model(model.inputs, model.outputs)  # drops non-serializable metrics, etc.
+    stateful_model.set_weights(plain_model.get_weights())
+    plain_model.save(model_path / 'model.keras')
+    stateful_model.save(model_path / 'stateful_model.keras')
+    return stateful_model

@@ -46,7 +46,7 @@ class BeatmapSequence(Sequence):
                     0]
                 data_dict[col] = keras.utils.to_categorical(data_dict[col], num_classes, dtype='float32')
 
-        if self.is_train:  # Mixup: https://arxiv.org/pdf/1710.09412.pdf
+        if self.is_train and self.config.training.mixup_alpha >= 1e-4:  # Mixup: https://arxiv.org/pdf/1710.09412.pdf
             size = min(self.num_snippets, (idx + 1) * self.batch_size) - idx * self.batch_size
             new_order = np.arange(size)
             np.random.shuffle(new_order)

@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+from typing import Tuple
 
 import gensim
 import numpy as np
@@ -8,7 +9,7 @@ import pandas as pd
 from process.compute import create_ogg_paths, generate_snippets, \
     add_previous_prediction  # split needed for gColab upload
 from process.compute import process_song_folder, create_ogg_caches, remove_ogg_cache
-from utils.functions import create_word_mapping
+from utils.functions import create_word_mapping, check_consistency
 from utils.types import Config, Timer
 
 
@@ -118,3 +119,29 @@ def df_post_processing(df, config):
 #     # # print(df)
 #     # df = process_song_folder(folder, Config())
 #     # print(df)
+def generate_datasets(song_folders, config: Config):
+    timer = Timer()
+    for phase, split in zip(['train', 'val', 'test'],
+                            zip(config.training.data_split,
+                                config.training.data_split[1:])
+                            ):
+        print('\n', '=' * 100, sep='')
+        print(f'Processing {phase}')
+        total = len(song_folders)
+        split_from = int(total * split[0])
+        split_to = int(total * split[1])
+        result_path = config.dataset.storage_folder / f'{phase}_beatmaps.pkl'
+
+        df = songs2dataset(song_folders[split_from:split_to], config=config)
+        timer(f'Created {phase} dataset', 1)
+
+        check_consistency(df)
+
+        config.dataset.storage_folder.mkdir(parents=True, exist_ok=True)
+        df.to_pickle(result_path, protocol=4)  # Protocol 4 for Python 3.6/3.7 compatibility
+        timer(f'Pickled {phase} dataset', 1)
+
+
+def load_datasets(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    return [pd.read_pickle(config.dataset.storage_folder / f'{phase}_beatmaps.pkl') for phase in
+            ['train', 'val', 'test']]
