@@ -3,6 +3,7 @@ from typing import List
 import gensim
 import numpy as np
 import tensorflow as tf
+import tensorflow_addons as tfa
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.models import Model
@@ -11,6 +12,7 @@ from tensorflow.python.keras.engine import data_adapter
 from tensorflow.python.keras.engine.training import _minimize
 from tensorflow.python.ops import embedding_ops
 
+from train.learning_rate_schedule import FlatCosAnnealSchedule
 from train.metric import create_metrics, CosineDistance
 from train.sequence import BeatmapSequence
 from utils.functions import y2action_word, create_word_mapping
@@ -121,6 +123,23 @@ def name_generator(prefix):
         id_ += 1
 
 
+def forgiving_concatenate(inputs, axis=-1, **kwargs):
+    """Functional interface to the `Concatenate` layer.
+  Automatically changes to identity on `inputs` of length 1.
+
+  Arguments:
+      inputs: A list of input tensors (at least 2).
+      axis: Concatenation axis.
+      **kwargs: Standard layer keyword arguments.
+
+  Returns:
+      A tensor, the concatenation of the inputs alongside axis `axis`.
+  """
+    if len(inputs) == 1:
+        return inputs[0]
+    return keras.layers.Concatenate(axis=axis, **kwargs)(inputs)
+
+
 def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     batch_size = 1 if stateful else None
     names = name_generator('layer')
@@ -128,7 +147,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     inputs = {}
     per_stream = {}
     # basic_block_size = 512
-    basic_block_size = 512
+    basic_block_size = 1024
 
     for col in seq.x_cols:
         if col in seq.categorical_cols:
@@ -174,13 +193,14 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
             #     per_stream[col] = layers.SpatialDropout1D(0.2)(per_stream[col])
 
     per_stream_list = list(per_stream.values())
-    x = layers.concatenate(inputs=per_stream_list, axis=-1, name=names.__next__(), )
-    # x = layers.Conv1D(filters=basic_block_size,
-    #                   kernel_size=1,
-    #                   activation='relu',
-    #                   padding='causal',
-    #                   kernel_initializer='lecun_normal',
-    #                   name=names.__next__())(x)
+    x = forgiving_concatenate(inputs=per_stream_list, axis=-1, name=names.__next__(), )
+    x = layers.Conv1D(filters=basic_block_size,
+                      kernel_size=1,
+                      activation=tfa.activations.mish,
+                      padding='causal',
+                      kernel_initializer='lecun_normal',
+                      name=names.__next__())(x)
+    x = layers.SpatialDropout1D(0.3)(x)
     # skip = x
     # for _ in range(3):
     #     x = layers.Conv1D(filters=basic_block_size,
@@ -216,13 +236,30 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
     if stateful or config.training.AVS_proxy_ratio == 0:
         model = Model(inputs=inputs, outputs=outputs)
+        opt = keras.optimizers.Adam()
     else:
         model = AVSModel(inputs=inputs, outputs=outputs, config=config)
 
-    # optimizer = keras.optimizers.RMSprop(learning_rate=0.0001)
-    optimizer = keras.optimizers.Adam(learning_rate=0.01)
+        # lr_schedule = tfa.optimizers.TriangularCyclicalLearningRate(
+        #     initial_learning_rate=1e-4,
+        #     maximal_learning_rate=8e-3,
+        #     step_size=2000,
+        #     scale_mode="iter",
+        #     name="CyclicScheduler")
+        # opt = keras.optimizers.Adam(learning_rate=lr_schedule)
+
+        lr_schedule = FlatCosAnnealSchedule(decay_start=len(seq) * 5 + 400,  # Give extra epochs to big batch_size
+                                            initial_learning_rate=8e-3,
+                                            decay_steps=len(seq) * 9 + 400)
+        # Ranger hyper params based on https://github.com/fastai/imagenette/blob/master/2020-01-train.md
+        opt = tfa.optimizers.RectifiedAdam(learning_rate=lr_schedule,
+                                           beta_1=0.95,
+                                           beta_2=0.99,
+                                           epsilon=1e-6)
+        opt = tfa.optimizers.Lookahead(opt, sync_period=6, slow_step_size=0.5)
+
     model.compile(
-        optimizer=optimizer,
+        optimizer=opt,
         loss=loss,
         metrics=create_metrics(config),
     )
