@@ -1,6 +1,7 @@
 import gc
 import multiprocessing
 import os
+from typing import Dict
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '5'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -15,7 +16,7 @@ from process.api import create_song_list, load_datasets
 from train.callbacks import create_callbacks
 from train.model import create_model
 from train.sequence import BeatmapSequence
-from utils.types import Config, Timer
+from utils.types import Config, Timer, DatasetConfig
 import pandas as pd
 
 
@@ -49,29 +50,75 @@ def main():
     manager = multiprocessing.Manager()
     return_list = manager.list()
 
-    for repetition in range(43):
-        for hyper_param, param_range in [('mixup_alpha', [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.9]),
-                                         ('label_smoothing', [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
-                                         ('batch_size', [1024, 512, 256, 128, 64, 32])]:
-            for parameter in param_range:
-                print(f'{hyper_param} = {parameter:5} | ' * 10)
-                setattr(config.training, hyper_param, parameter)
-                return_list[:] = []
-                process = multiprocessing.Process(target=get_config_model_loss,
-                                                  args=(train, val, test, config, return_list))
-                process.start()
-                process.join()
-                history, eval_metrics = return_list
-                eval_metrics['history'] = history
-                eval_metrics['elapsed'] = timer(f'{parameter} evaluated')
+    for repetition in range(7):
+        # hyper_params = {'mixup_alpha': [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.25]}
+        # config = Config()
+        # config.training.label_smoothing = 0
+        # eval_hyperparams(base_folder, timer, hyper_params, return_list, train, val, test, config)
+        #
+        # hyper_params = {'label_smoothing': [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]}
+        # config = Config()
+        # config.training.mixup_alpha = 0
+        # eval_hyperparams(base_folder, timer, hyper_params, return_list, train, val, test, config)
+        #
+        # hyper_params = {'label_smoothing': [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75,],
+        #                 'mixup_alpha': [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75,]}
+        # config = Config()
+        # eval_hyperparams(base_folder, timer, hyper_params, return_list, train, val, test, config)
 
-                df = pd.read_csv(base_folder / 'temp' / f'{hyper_param}.csv', index_col=0)
-                df = df.append(pd.Series(eval_metrics, name=parameter))
-                df.index.name = hyper_param
-                print(df)
-                df.to_csv(base_folder / 'temp' / f'{hyper_param}.csv')
+        # hyper_params = {'batch_size': [1024, 512, 256, 128, 64, 32]}
+        # config = Config()
+        # config.training.mixup_alpha = 0.75
+        # config.training.label_smoothing = 0
+        # eval_hyperparams(base_folder, timer, hyper_params, return_list, train, val, test, config)
 
-    print(df)
+        hyper_params = {'x_groups': [
+            # Without previous beat
+            [DatasetConfig.categorical, DatasetConfig.audio, DatasetConfig.regression],
+            # Without ActionVec information
+            [['prev_word_id'], DatasetConfig.categorical, DatasetConfig.audio, DatasetConfig.regression],
+            [['prev_word_id'], DatasetConfig.categorical, DatasetConfig.audio, ],
+            [['prev_word_id'], DatasetConfig.categorical, DatasetConfig.regression],
+            [['prev_word_id'], DatasetConfig.audio, DatasetConfig.regression],
+            [['prev_word_id'], ],
+            # Without one data stream
+            [['prev_word_vec'], ],
+            [['prev_word_vec'], DatasetConfig.categorical, DatasetConfig.audio, DatasetConfig.regression],
+            [['prev_word_vec'], DatasetConfig.categorical, DatasetConfig.audio, ],
+            [['prev_word_vec'], DatasetConfig.categorical, DatasetConfig.regression],
+            [['prev_word_vec'], DatasetConfig.audio, DatasetConfig.regression],
+        ]}
+        config = Config()
+        config.training.mixup_alpha = 0.5
+        config.training.label_smoothing = 0.5
+        eval_hyperparams(base_folder, timer, hyper_params, return_list, train, val, test, config)
+
+
+def eval_hyperparams(base_folder, timer, hyper_params: Dict, return_list, train, val, test, config):
+    test_name = ':'.join(hyper_params.keys())
+    for parameters in zip(*hyper_params.values()):
+        print(f'{test_name} = {parameters} | ' * 10)
+        for hyper_param, parameter in zip(hyper_params, parameters):
+            setattr(config.training, hyper_param, parameter)
+
+        return_list[:] = []
+        process = multiprocessing.Process(target=get_config_model_loss,
+                                          args=(train, val, test, config, return_list))
+        process.start()
+        process.join()
+        history, eval_metrics = return_list
+        eval_metrics['history'] = history
+        eval_metrics['elapsed'] = timer(f'{parameters} evaluated')
+        series = pd.Series(eval_metrics, name=':'.join([str(x) for x in parameters]))
+
+        if (base_folder / 'temp' / f'{test_name}.csv').exists():
+            df = pd.read_csv(base_folder / 'temp' / f'{test_name}.csv', index_col=0)
+            df = df.append(series)
+        else:
+            df = pd.DataFrame([series, ])
+        df.index.name = test_name
+        print(df)
+        df.to_csv(base_folder / 'temp' / f'{test_name}.csv')
 
 
 def get_config_model_loss(train, val, test, config, return_list):
