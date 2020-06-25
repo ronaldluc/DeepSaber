@@ -1,5 +1,8 @@
-import gc
+import os
 import random
+
+os.environ['AUTOGRAPH_VERBOSITY'] = '5'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import numpy as np
 import tensorflow as tf
@@ -48,8 +51,8 @@ def main():
     test_seq = BeatmapSequence(df=test, is_train=False, config=config)
     timer('Generated sequences', 5)
 
-    del train, val, test
-    gc.collect()
+    # del train, val, test
+    # gc.collect()
 
     # keras.mixed_precision.experimental.set_policy('mixed_float16')
     model_path = base_folder / 'temp'
@@ -81,15 +84,19 @@ def main():
         timer('Saved model', 5)
 
     stateful_model = keras.models.load_model(model_path / 'stateful_model.keras')
-
-    beatmap_folder = base_folder / 'human_beatmaps' / 'new_dataformat' / '133b'
-    output_folder = base_folder / 'testing' / 'generated_songs'
-
     stateful_model.summary()
     timer('Loaded stateful model', 5)
 
-    generate_complete_beatmaps(beatmap_folder, output_folder, stateful_model, config)
-    timer('Generated beatmaps', 5)
+    input_folder = base_folder / 'human_beatmaps' / 'new_dataformat'
+    output_folder = base_folder / 'testing' / 'generated_songs'
+    song_codes_to_gen = list(x for x in test.index.to_frame()["name"].unique()[:5])
+    song_codes_to_gen = ['133b', ]
+    print(song_codes_to_gen)
+    for song_code in song_codes_to_gen:
+        beatmap_folder = input_folder / song_code
+        print(beatmap_folder)
+        generate_complete_beatmaps(beatmap_folder, output_folder, stateful_model, config)
+        timer('Generated beatmaps', 5)
 
 
 if __name__ == '__main__':

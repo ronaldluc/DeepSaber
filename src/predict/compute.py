@@ -163,7 +163,7 @@ def update_next(i, output_names, pred, most_recent, seq: BeatmapSequence, config
 
         if col in seq.categorical_cols:
             # val = softmax(val ** 100, axis=-1)
-            val = np.log(val) / np.max([config.generation.temperature, 1e-6])
+            val = np.log(val) / np.max([config.generation.temperature(i), 1e-6])
             val = softmax(val, axis=-1)
             chosen_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten() / np.sum(val))  # categorical dist
             seq.data[col][:, i + 1] = chosen_index
@@ -189,6 +189,7 @@ def update_generated_metadata(gen_folder, beatmap_folder, config):
                               if x['_difficulty'] not in config.training.use_difficulties):
             (gen_folder / not_generated).with_suffix('.dat').unlink()
         info['_beatsPerMinute'] = 60
+        info['_levelAuthorName'] = 'DeepSaber'
 
         with open(gen_folder / 'info.dat', 'w') as wf:
             json.dump(info, wf)
