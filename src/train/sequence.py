@@ -1,3 +1,4 @@
+import logging
 from functools import cached_property
 
 import numpy as np
@@ -93,3 +94,8 @@ class BeatmapSequence(Sequence):
         for col in self.data:
             if len(self.data[col].shape) < 3:
                 self.data[col] = self.data[col].reshape(*shape, 1)
+
+        if self.data['word_id'].max() == 0 and 'word_id' in ' '.join(self.shapes.keys()):
+            logging.log(logging.ERROR, f'Using action vector space information without loaded FastText action '
+                                       f'embeddings. The embeddings should be in '
+                                       f'{config.dataset.action_word_model_path}')

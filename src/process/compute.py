@@ -224,7 +224,7 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
 
     try:
         mfcc_df = path2mfcc_df(file_ogg, config=config)
-    except (ValueError, FileNotFoundError) as e:
+    except (ValueError, FileNotFoundError, AttributeError) as e:  # TODO: Remove AttributeError if not necessary
         print(f'\n\t[process | process_song_folder] Skipped file {folder_name}  |  {folder}:\n\t\t{e}', file=stderr)
         return None
 
@@ -258,7 +258,8 @@ def add_multiindex(df, difficulty, folder_name):
 def add_previous_prediction(df: pd.DataFrame, config: Config):
     beat_elements_pp = config.dataset.beat_elements_previous_prediction
     beat_actions_pp = config.dataset.beat_actions_previous_prediction
-    df[beat_elements_pp + beat_actions_pp] = df[config.dataset.beat_elements + config.dataset.beat_actions].shift(1)
+    df_shifted = df[config.dataset.beat_elements + config.dataset.beat_actions].shift(1)
+    df[beat_elements_pp + beat_actions_pp] = df_shifted
     df = df.dropna().copy()
     df.loc[:, beat_elements_pp] = df[beat_elements_pp].astype('int8')
 

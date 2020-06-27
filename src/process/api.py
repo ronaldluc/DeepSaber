@@ -47,7 +47,7 @@ def songs2dataset(song_folders, config: Config) -> pd.DataFrame:
 
     inputs = ((s, config, (i, folders_to_process)) for i, s in enumerate(song_folders))
     songs = pool.starmap(process_song_folder, inputs)
-    # songs = map(lambda x: process_song_folder(*x), inputs)
+    # songs = map(lambda x: process_song_folder(*x), inputs)    # single core version for debugging
     timer('Computed partial dataframes from folders')
 
     pool.close()
@@ -70,13 +70,17 @@ def songs2dataset(song_folders, config: Config) -> pd.DataFrame:
 
 
 def df_post_processing(df, config):
-    action_model = gensim.models.KeyedVectors.load(str(config.dataset.action_word_model_path))
+    if config.dataset.action_word_model_path.exists():
+        action_model = gensim.models.KeyedVectors.load(str(config.dataset.action_word_model_path))
 
-    df['word_vec'] = np.vsplit(action_model[df['word'].values].astype('float16'), len(df))
-    df['word_vec'] = df['word_vec'].map(lambda x: x[0])
+        df['word_vec'] = np.vsplit(action_model[df['word'].values].astype('float16'), len(df))
+        df['word_vec'] = df['word_vec'].map(lambda x: x[0])
 
-    word_id_dict = create_word_mapping(action_model)
-    df['word_id'] = df['word'].map(lambda word: word_id_dict.get(word, 1))  # 0: MASK, 1: UNK
+        word_id_dict = create_word_mapping(action_model)
+        df['word_id'] = df['word'].map(lambda word: word_id_dict.get(word, 1))  # 0: MASK, 1: UNK
+    else:
+        df['word_vec'] = 0
+        df['word_id'] = 0
 
     df = df.groupby(['name', 'difficulty']).apply(lambda x: add_previous_prediction(x, config=config))
 

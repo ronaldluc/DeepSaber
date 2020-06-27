@@ -1,3 +1,4 @@
+import logging
 from typing import List
 
 import gensim
@@ -23,6 +24,11 @@ class AVSModel(Model):
     """
     Train/test step modification works only on TF2.2+.
 
+    AVSModel computes action vector space related metrics from any
+    of the 3 used action data input/output representation.
+    If per attribute enumeration is used, the model computes the action vectors
+    only on a subset of the validation data (controlled by `config.training.AVS_proxy_ratio`).
+
     The reason to create AVS specific model instead of general model with metrics with multiple inputs
     is to avoid recomputing WordVec embeddings multiple times as their computation takes orders of magnitude
     more time than back propagation.
@@ -36,6 +42,12 @@ class AVSModel(Model):
             'avs_l2': tf.keras.metrics.MeanSquaredError('avs_l2'),
         }
         self.config = config
+        if not self.config.dataset.action_word_model_path.exists():
+            raise FileNotFoundError(
+                f'Could not find FastText action embeddings ({self.config.dataset.action_word_model_path})'
+                f'\nGenerate the action embeddings using the jupyter notebook script, '
+                f'or use the normal `keras.Model` by setting `config.training.AVS_proxy_ratio`'
+                f'to 0.')
         self.word_model = gensim.models.KeyedVectors.load(str(self.config.dataset.action_word_model_path))
         self.word_id_dict = create_word_mapping(self.word_model)  # TODO: Rename
         self.embeddings = tf.convert_to_tensor(np.concatenate([np.zeros((2, self.word_model.vectors.shape[-1])),
@@ -53,12 +65,6 @@ class AVSModel(Model):
         with backprop.GradientTape() as tape:
             y_pred = self(x, training=True)
             loss = self.compiled_loss(y, y_pred, sample_weight, regularization_losses=self.losses)
-            # For custom training steps, users can just write:
-            # trainable_variables = self.trainable_variables
-            # gradients = tape.gradient(loss, trainable_variables)
-            # self.optimizer.apply_gradients(zip(gradients, trainable_variables))
-        # The _minimize call does a few extra steps unnecessary in most cases,
-        # such as loss scaling and gradient clipping.
         _minimize(self.distribute_strategy, tape, self.optimizer, loss,
                   self.trainable_variables)
 
@@ -124,17 +130,18 @@ def name_generator(prefix):
 
 
 def forgiving_concatenate(inputs, axis=-1, **kwargs):
-    """Functional interface to the `Concatenate` layer.
-  Automatically changes to identity on `inputs` of length 1.
+    """
+    Functional interface to the `Concatenate` layer.
+    Automatically changes to identity on `inputs` of length 1.
 
-  Arguments:
-      inputs: A list of input tensors (at least 2).
-      axis: Concatenation axis.
-      **kwargs: Standard layer keyword arguments.
+    Arguments:
+        inputs: A list of input tensors (at least 2).
+        axis: Concatenation axis.
+        **kwargs: Standard layer keyword arguments.
 
-  Returns:
-      A tensor, the concatenation of the inputs alongside axis `axis`.
-  """
+    Returns:
+        A tensor, the concatenation of the inputs alongside axis `axis`.
+    """
     if len(inputs) == 1:
         return inputs[0]
     return keras.layers.Concatenate(axis=axis, **kwargs)(inputs)
@@ -147,7 +154,8 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     inputs = {}
     per_stream = {}
     # basic_block_size = 512
-    basic_block_size = 1024
+    basic_block_size = config.training.model_size
+    dropout = config.training.dropout
 
     for col in seq.x_cols:
         if col in seq.categorical_cols:
@@ -169,55 +177,35 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         if col in seq.regression_cols:
             shape = None, *seq.shapes[col][2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
-            per_stream[f'{col}_orig'] = inputs[col]
-            # per_stream[col] = inputs[col]
-
-            # per_stream[f'{col}_orig'] = layers.Conv1D(filters=basic_block_size,
-            #                                           kernel_size=1,
-            #                                           activation='relu',
-            #                                           padding='causal',
-            #                                           kernel_initializer='lecun_normal',
-            #                                           name=names.__next__())(per_stream[f'{col}_orig'])
-            # per_stream[f'{col}_orig'] = layers.BatchNormalization(name=names.__next__(), )(per_stream[f'{col}_orig'])
-            # per_stream[f'{col}_orig'] = layers.SpatialDropout1D(0.3, name=names.__next__(), )(per_stream[f'{col}_orig'])
-            # for _ in range(3):
-            #     per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
-            #                                                                kernel_size=s,
-            #                                                                activation='relu',
-            #                                                                padding='causal',
-            #                                                                kernel_initializer='lecun_normal',
-            #                                                                name=names.__next__())(per_stream[col])
-            #                                                  for s in [3, 5, 7]],
-            #                                          axis=-1, name=names.__next__(), )
-            #     per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
-            #     per_stream[col] = layers.SpatialDropout1D(0.2)(per_stream[col])
+            # per_stream[f'{col}_orig'] = inputs[col]
+            per_stream[col] = inputs[col]
+            for _ in range(config.training.cnn_repetition):
+                per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
+                                                                           kernel_size=s,
+                                                                           activation=tfa.activations.mish,
+                                                                           padding='causal',
+                                                                           kernel_initializer='lecun_normal',
+                                                                           name=names.__next__())(per_stream[col])
+                                                             for s in [3, 7]],
+                                                     axis=-1, name=names.__next__(), )
+                per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
+                per_stream[col] = layers.SpatialDropout1D(config.training.dropout)(per_stream[col])
 
     per_stream_list = list(per_stream.values())
     x = forgiving_concatenate(inputs=per_stream_list, axis=-1, name=names.__next__(), )
-    x = layers.Conv1D(filters=basic_block_size,
-                      kernel_size=1,
-                      activation=tfa.activations.mish,
-                      padding='causal',
-                      kernel_initializer='lecun_normal',
-                      name=names.__next__())(x)
-    x = layers.SpatialDropout1D(0.3)(x)
-    # skip = x
-    # for _ in range(3):
-    #     x = layers.Conv1D(filters=basic_block_size,
-    #                       kernel_size=1,
-    #                       activation='relu',
-    #                       padding='causal',
-    #                       kernel_initializer='lecun_normal',
-    #                       name=names.__next__())(x)
-    #     x = layers.BatchNormalization(name=names.__next__(), )(x)
-    #     x = layers.SpatialDropout1D(0.2)(x)
-    # x = layers.concatenate(inputs=[skip, x], axis=-1, name=names.__next__(), )
-    # x = layers.Dropout(0.4)(x)
-    x = layers.LSTM(basic_block_size, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
-    x = layers.BatchNormalization(name=names.__next__(), )(x)
-    x = layers.Dropout(0.4)(x)
-    x = layers.LSTM(basic_block_size, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
-    x = layers.BatchNormalization(name=names.__next__(), )(x)
+
+    for i in range(config.training.lstm_repetition):
+        if i > 0:
+            x = layers.Dropout(dropout)(x)
+        x = layers.LSTM(basic_block_size, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
+        x = layers.BatchNormalization(name=names.__next__(), )(x)
+
+    for i in range(config.training.dense_repetition):
+        if i > 0:
+            x = layers.Dropout(dropout)(x)
+        x = layers.TimeDistributed(
+            layers.Dense(basic_block_size, activation=tfa.activations.mish, name=names.__next__()),
+            name=names.__next__())(x)
 
     outputs = {}
     loss = {}
@@ -226,15 +214,17 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
             shape = seq.shapes[col][-1]
             outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation='softmax'), name=col)(x)
             loss[col] = keras.losses.CategoricalCrossentropy(
-                label_smoothing=tf.cast(config.training.label_smoothing, 'float32'),  # TODO: Enable
-            )
-            # does not work with mixed precision and stateful model
+                label_smoothing=tf.cast(config.training.label_smoothing, 'float32'),
+            )  # does not work well with mixed precision and stateful model
         if col in seq.regression_cols:
             shape = seq.shapes[col][-1]
             outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation=None), name=col)(x)
             loss[col] = 'mse'
 
     if stateful or config.training.AVS_proxy_ratio == 0:
+        if config.training.AVS_proxy_ratio == 0:
+            logging.log(logging.WARNING, f'Not using AVSModel with superior optimizer due to '
+                                         f'{config.training.AVS_proxy_ratio=}.')
         model = Model(inputs=inputs, outputs=outputs)
         opt = keras.optimizers.Adam()
     else:
@@ -248,9 +238,10 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         #     name="CyclicScheduler")
         # opt = keras.optimizers.Adam(learning_rate=lr_schedule)
 
-        lr_schedule = FlatCosAnnealSchedule(decay_start=len(seq) * 5 + 400,  # Give extra epochs to big batch_size
-                                            initial_learning_rate=8e-3,
-                                            decay_steps=len(seq) * 9 + 400)
+        lr_schedule = FlatCosAnnealSchedule(decay_start=len(seq) * 7 + 400,  # Give extra epochs to big batch_size
+                                            initial_learning_rate=config.training.initial_learning_rate,
+                                            decay_steps=len(seq) * 10 + 400,
+                                            alpha=0.01, )
         # Ranger hyper params based on https://github.com/fastai/imagenette/blob/master/2020-01-train.md
         opt = tfa.optimizers.RectifiedAdam(learning_rate=lr_schedule,
                                            beta_1=0.95,

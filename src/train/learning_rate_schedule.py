@@ -43,7 +43,6 @@ class FlatCosAnnealSchedule(keras.experimental.CosineDecay):
                                                     alpha,
                                                     name)
         self.decay_start = decay_start
-        # self.decay_start = decay_start
 
     def __call__(self, step):
         with ops.name_scope_v2(self.name or "FlatCosAnnealSchedule"):
@@ -62,7 +61,6 @@ class FlatCosAnnealSchedule(keras.experimental.CosineDecay):
 
             decayed = (1 - self.alpha) * cosine_decayed + self.alpha
             res = math_ops.multiply(initial_learning_rate, decayed)
-            # tf.print('LR: ', res)
             return res
 
     def get_config(self):
