@@ -1,14 +1,10 @@
-import os
+import gc
 import random
-
-os.environ['AUTOGRAPH_VERBOSITY'] = '5'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
-import experiments
 from predict.api import generate_complete_beatmaps
 from process.api import create_song_list, load_datasets
 from train.callbacks import create_callbacks
@@ -31,7 +27,7 @@ def main():
     total = len(song_folders)
     print(f'Found {total} folders')
 
-    config.dataset.storage_folder = base_folder / 'full_datasets'
+    config.dataset.storage_folder = base_folder / 'old_datasets'
     config.dataset.storage_folder = base_folder / 'new_datasets'
     # config.dataset.storage_folder = base_folder / 'test_datasets'
     # config.audio_processing.use_cache = False
@@ -51,8 +47,8 @@ def main():
     test_seq = BeatmapSequence(df=test, is_train=False, config=config)
     timer('Generated sequences', 5)
 
-    # del train, val, test
-    # gc.collect()
+    # del train, val, test  # delete the data if experiencing RAM problems
+    gc.collect()
 
     # keras.mixed_precision.experimental.set_policy('mixed_float16')
     model_path = base_folder / 'temp'
@@ -100,5 +96,4 @@ def main():
 
 
 if __name__ == '__main__':
-    # main()
-    experiments.config.main()
+    main()

@@ -16,7 +16,7 @@ from process.api import create_song_list, load_datasets
 from train.callbacks import create_callbacks
 from train.model import create_model
 from train.sequence import BeatmapSequence
-from utils.types import Config, Timer, DatasetConfig
+from utils.types import Config, Timer
 import pandas as pd
 
 
@@ -72,25 +72,57 @@ def main():
         # config.training.label_smoothing = 0
         # eval_hyperparams(base_folder, timer, hyper_params, return_list, train, val, test, config)
 
-        hyper_params = {'x_groups': [
-            # Without previous beat
-            [DatasetConfig.categorical, DatasetConfig.audio, DatasetConfig.regression],
-            # Without ActionVec information
-            [['prev_word_id'], DatasetConfig.categorical, DatasetConfig.audio, DatasetConfig.regression],
-            [['prev_word_id'], DatasetConfig.categorical, DatasetConfig.audio, ],
-            [['prev_word_id'], DatasetConfig.categorical, DatasetConfig.regression],
-            [['prev_word_id'], DatasetConfig.audio, DatasetConfig.regression],
-            [['prev_word_id'], ],
-            # Without one data stream
-            [['prev_word_vec'], ],
-            [['prev_word_vec'], DatasetConfig.categorical, DatasetConfig.audio, DatasetConfig.regression],
-            [['prev_word_vec'], DatasetConfig.categorical, DatasetConfig.audio, ],
-            [['prev_word_vec'], DatasetConfig.categorical, DatasetConfig.regression],
-            [['prev_word_vec'], DatasetConfig.audio, DatasetConfig.regression],
-        ]}
+        # hyper_params = {'x_groups': [
+        # Without previous beat
+        # [DatasetConfig.categorical, DatasetConfig.audio, DatasetConfig.regression],
+        # Without ActionVec information
+        # [['prev_word_id'], DatasetConfig.categorical, DatasetConfig.audio, DatasetConfig.regression],
+        # [['prev_word_id'], DatasetConfig.categorical, DatasetConfig.audio, ],
+        # [['prev_word_id'], DatasetConfig.categorical, DatasetConfig.regression],
+        # [['prev_word_id'], DatasetConfig.audio, DatasetConfig.regression],
+        # [['prev_word_id'], ],
+        # Without one data stream
+        # [['prev_word_vec'], ],
+        # [['prev_word_vec'], DatasetConfig.categorical, DatasetConfig.audio, DatasetConfig.regression],
+        # [['prev_word_vec'], DatasetConfig.categorical, DatasetConfig.audio, ],
+        # [['prev_word_vec'], DatasetConfig.categorical, DatasetConfig.regression],
+        # [['prev_word_vec'], DatasetConfig.audio, DatasetConfig.regression],
+        # Give it redundant inputs
+        # [['prev_word_vec', 'prev_word_id'], DatasetConfig.categorical, DatasetConfig.audio,
+        #  DatasetConfig.regression],
+        # [['prev_word_vec', 'prev_word_id'], DatasetConfig.beat_elements_previous_prediction,
+        #  DatasetConfig.categorical,
+        #  DatasetConfig.audio, DatasetConfig.regression],
+        # [['prev_word_vec', ], DatasetConfig.beat_elements_previous_prediction, DatasetConfig.categorical,
+        #  DatasetConfig.audio, DatasetConfig.regression],
+        # ]}
+        # config = Config()
+        # config.training.mixup_alpha = 0.5
+        # config.training.label_smoothing = 0.5
+        # eval_hyperparams(base_folder, timer, hyper_params, return_list, train, val, test, config)
+        #
+        # hyper_params = {'model_size': [1024, 768, 512, 384, 256, 128, 64, ]}
+        # config = Config()
+        # config.training.mixup_alpha = 0.5
+        # config.training.label_smoothing = 0.5
+        # eval_hyperparams(base_folder, timer, hyper_params, return_list, train, val, test, config)
+        #
+        # hyper_params = {'dropout': [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, ]}
+        # config = Config()
+        # config.training.mixup_alpha = 0.5
+        # config.training.label_smoothing = 0.5
+        # eval_hyperparams(base_folder, timer, hyper_params, return_list, train, val, test, config)
+
+        # hyper_params = {'cnn_repetition': range(5)}
+        # config = Config()
+        # eval_hyperparams(base_folder, timer, hyper_params, return_list, train, val, test, config)
+        #
+        # hyper_params = {'lstm_repetition': range(5)}
+        # config = Config()
+        # eval_hyperparams(base_folder, timer, hyper_params, return_list, train, val, test, config)
+
+        hyper_params = {'dense_repetition': range(5)}
         config = Config()
-        config.training.mixup_alpha = 0.5
-        config.training.label_smoothing = 0.5
         eval_hyperparams(base_folder, timer, hyper_params, return_list, train, val, test, config)
 
 
