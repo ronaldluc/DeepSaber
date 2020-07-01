@@ -238,9 +238,9 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         #     name="CyclicScheduler")
         # opt = keras.optimizers.Adam(learning_rate=lr_schedule)
 
-        lr_schedule = FlatCosAnnealSchedule(decay_start=len(seq) * 7 + 400,  # Give extra epochs to big batch_size
+        lr_schedule = FlatCosAnnealSchedule(decay_start=len(seq) * 13 + 400,  # Give extra epochs to big batch_size
                                             initial_learning_rate=config.training.initial_learning_rate,
-                                            decay_steps=len(seq) * 10 + 400,
+                                            decay_steps=len(seq) * 18 + 400,
                                             alpha=0.01, )
         # Ranger hyper params based on https://github.com/fastai/imagenette/blob/master/2020-01-train.md
         opt = tfa.optimizers.RectifiedAdam(learning_rate=lr_schedule,

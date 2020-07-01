@@ -60,7 +60,7 @@ class BeatmapSequence(Sequence):
         return {col: data_dict[col] for col in self.x_cols}, {col: data_dict[col] for col in self.y_cols}
 
     def on_epoch_end(self):
-        """Mirror horizontally"""
+        """Shuffle the data to make new Maxups possible"""
         new_order = np.arange(self.num_snippets)
         np.random.shuffle(new_order)
         for col in self.data:

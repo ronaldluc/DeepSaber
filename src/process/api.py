@@ -86,43 +86,7 @@ def df_post_processing(df, config):
 
     return df
 
-# if __name__ == '__main__':
-#     song_folders = create_song_list('../data')
-#     total = len(song_folders)
-#     val_split = int(total * 0.8)
-#     test_split = int(total * 0.9)
-#     #
-#
-#     result_path = '../data/test_beatmaps.pkl'
-#     df = pd.read_pickle(result_path)
-#
-#     # res = df.groupby(['name', 'difficulty']).apply(lambda x: generate_snippets(x, config=Config()))
-#
-#     print(df)
-#
-#     # start = time()
-#     # df = songs2dataset(song_folders[test_split:], config=Config())
-#     # print(f'\n\nTook {time() - start}\n')
-#     #
-#     # df.to_pickle(result_path)
-#     # print(df)
-#     #
-#     # df = songs2dataset(song_folders[val_split:test_split], config=Config())
-#     # result_path = '../data/val_plain_beatmaps.pkl'
-#     # df.to_pickle(result_path)
-#     # print(df)
-#
-#     df = songs2dataset(song_folders[:val_split], config=Config())
-#     result_path = '../data/train_plain_beatmaps.pkl'
-#     df.to_pickle(result_path)
-#     print(df)
-#     # pass
-#
-#     # folder = '../data/new_dataformat/3207'
-#     # # df = path2mfcc_df(folder, Config())
-#     # # print(df)
-#     # df = process_song_folder(folder, Config())
-#     # print(df)
+
 def generate_datasets(song_folders, config: Config):
     timer = Timer()
     for phase, split in zip(['train', 'val', 'test'],

@@ -14,10 +14,11 @@ ROOT_DIR: Path = Path(__file__).parents[2]
 @dataclass
 class AudioProcessingConfig:
     num_cepstral: int = 13
-    frame_length: float = 0.010  # in seconds
+    frame_length: float = 0.025  # in seconds
     frame_stride: float = 0.010  # in seconds
-    time_shift: float = -0.0  # in seconds
-    use_temp_derrivatives: float = True
+    time_shift: float = -0.4  # in seconds, should be non-positive
+    # trick from http://grail.cs.washington.edu/projects/AudioToObama/siggraph17_obama.pdf
+    use_temp_derrivatives: float = True  # TODO: Change to correct defaults
     use_cache: bool = True
     signal_max_length: float = 2.5e7  # in samples
 
@@ -86,10 +87,10 @@ class DatasetConfig:
 
 @dataclass
 class TrainingConfig:
-    cnn_repetition: int = 2
+    cnn_repetition: int = 0
     lstm_repetition: int = 2
-    dense_repetition: int = 2
-    model_size: int = 256 + 128
+    dense_repetition: int = 0
+    model_size: int = 512
     dropout: float = 0.3
     initial_learning_rate: float = 8e-3
     data_split: Tuple = (0.0, 0.8, 0.9, 0.99,)
@@ -125,7 +126,10 @@ class TrainingConfig:
 
 
 def temperature(steps):
-    return 0.7 + 1 / (steps + 3)
+    # if random.randint(0, 10):
+    if steps % 8 == 0:
+        return 0.85
+    return 0.4  # + 1 / (steps + 3)
 
 
 @dataclass

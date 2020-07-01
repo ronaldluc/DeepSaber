@@ -27,8 +27,9 @@ def main():
     total = len(song_folders)
     print(f'Found {total} folders')
 
-    config.dataset.storage_folder = base_folder / 'old_datasets'
-    config.dataset.storage_folder = base_folder / 'new_datasets'
+    config.dataset.storage_folder = base_folder / 'new_datasets_config_test'
+    # config.dataset.storage_folder = base_folder / 'old_datasets'
+    # config.dataset.storage_folder = base_folder / 'new_datasets'
     # config.dataset.storage_folder = base_folder / 'test_datasets'
     # config.audio_processing.use_cache = False
 
@@ -55,7 +56,7 @@ def main():
     model_path.mkdir(parents=True, exist_ok=True)
 
     train = True
-    # train = False
+    train = False
     if train:
         model = create_model(train_seq, False, config)
         model.summary()

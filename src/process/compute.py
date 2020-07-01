@@ -280,16 +280,24 @@ def join_closest_index(df: pd.DataFrame, other: pd.DataFrame, other_name: str = 
     original_index = df.index
     round_index = other.index.values[1] - other.index.values[0]
     df.index = np.floor(df.index / round_index).astype(int)
-    other.index = (other.index / round_index).astype(int)
-    other = other.reset_index(drop=True)
+    other_offset = (other.index / round_index).astype(int).min() - 1
+    other = other.reset_index(drop=True)  # make sure whole int span is exactly covered
+    other.index = other.index + other_offset
 
     other.name = other_name
-    df = df.join(other)
+    if len(other.columns) == 1:
+        df = df.join(other)
+    else:
+        df = df.join(other, rsuffix=f'_{other_name}')
     df.index = original_index
     return df
 
 
 def path2mfcc_df(ogg_path, config: Config) -> pd.DataFrame:
+    """
+    Generate MFCC audio representation for a given ogg file path.
+    The representation computed depends on `config.audio_processing` setting.
+    """
     cache_path = f'{".".join(ogg_path.split(".")[:-1])}.pkl'
 
     if os.path.exists(cache_path):
@@ -304,7 +312,11 @@ def path2mfcc_df(ogg_path, config: Config) -> pd.DataFrame:
     if config.audio_processing.use_temp_derrivatives:
         df = df.join(df.diff().fillna(0), rsuffix='_d')
 
-    df.index = df.index + config.audio_processing.time_shift
+    if config.audio_processing.time_shift is not None:
+        df_shifted = df.copy()
+        df_shifted.index = df_shifted.index + config.audio_processing.time_shift
+        df = join_closest_index(df, df_shifted, 'shifted')
+        df.dropna(inplace=True)
 
     flatten = np.split(df.to_numpy().astype('float16').flatten(), len(df.index))
     return pd.DataFrame(data={'mfcc': flatten},
@@ -322,10 +334,10 @@ def audio2mfcc_df(signal: np.ndarray, samplerate: int, config: Config) -> pd.Dat
         signal = signal[:, 0]
 
     # Pre-emphasize
-    # signal_preemphasized = speechpy.processing.preemphasis(signal, cof=0.98)  # TODO: should be used?
+    signal_preemphasized = speechpy.processing.preemphasis(signal, cof=0.98)  # TODO: should be used?
 
     # Extract MFCC features
-    mfcc = speechpy.feature.mfcc(signal,
+    mfcc = speechpy.feature.mfcc(signal_preemphasized,
                                  sampling_frequency=samplerate,
                                  frame_length=config.audio_processing.frame_length,
                                  frame_stride=config.audio_processing.frame_stride,
