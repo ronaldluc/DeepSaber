@@ -92,13 +92,14 @@ class TrainingConfig:
     dense_repetition: int = 0
     model_size: int = 512
     dropout: float = 0.3
-    initial_learning_rate: float = 8e-3
+    initial_learning_rate: float = 1e-4  # 8e-3 default
     data_split: Tuple = (0.0, 0.8, 0.9, 0.99,)
     AVS_proxy_ratio: float = 0.2  # Fraction of songs to compute AVS cosine similarity
     # if word reconstruction has to be used
     batch_size: float = 128
     label_smoothing: float = 0.5
     mixup_alpha: float = 0.5  # `mixup_alpha` == 0 => mixup is not used
+    l2_regularization: float = 3e-4
     use_difficulties: List = field(
         default_factory=lambda: ['Normal', 'Hard', 'Expert', ])
     categorical_groups: List = field(

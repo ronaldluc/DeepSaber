@@ -15,7 +15,7 @@ def create_callbacks(train_seq: BeatmapSequence, config: Config):
         #                               verbose=1, cooldown=3),
         # ForgivingEarlyStopping(monitor='val_avs_dist', max_forgiveness=0.003, patience=8, verbose=0, mode='auto',
         #                        baseline=None, restore_best_weights=True),
-        K.callbacks.EarlyStopping(monitor='val_avs_dist', min_delta=0.001, patience=4, verbose=0, mode='auto',
+        K.callbacks.EarlyStopping(monitor='val_perplexity', min_delta=0.001, patience=5, verbose=0, mode='auto',
                                   baseline=None, restore_best_weights=True),
         OnEpochEnd([train_seq]),
     ]

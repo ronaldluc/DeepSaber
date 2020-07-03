@@ -8,6 +8,7 @@ from tensorflow import keras
 from predict.api import generate_complete_beatmaps
 from process.api import create_song_list, load_datasets
 from train.callbacks import create_callbacks
+from train.metric import Perplexity
 from train.model import create_model, save_model
 from train.sequence import BeatmapSequence
 from utils.types import Config, Timer
@@ -56,7 +57,7 @@ def main():
     model_path.mkdir(parents=True, exist_ok=True)
 
     train = True
-    train = False
+    # train = False
     if train:
         model = create_model(train_seq, False, config)
         model.summary()
@@ -80,7 +81,8 @@ def main():
         save_model(model, model_path, train_seq, config)
         timer('Saved model', 5)
 
-    stateful_model = keras.models.load_model(model_path / 'stateful_model.keras')
+    stateful_model = keras.models.load_model(model_path / 'stateful_model.keras',
+                                             custom_objects={'Perplexity': Perplexity})
     stateful_model.summary()
     timer('Loaded stateful model', 5)
 

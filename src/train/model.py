@@ -14,7 +14,7 @@ from tensorflow.python.keras.engine.training import _minimize
 from tensorflow.python.ops import embedding_ops
 
 from train.learning_rate_schedule import FlatCosAnnealSchedule
-from train.metric import create_metrics, CosineDistance
+from train.metric import create_metrics, CosineDistance, Perplexity
 from train.sequence import BeatmapSequence
 from utils.functions import y2action_word, create_word_mapping
 from utils.types import Config
@@ -179,17 +179,17 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
             # per_stream[f'{col}_orig'] = inputs[col]
             per_stream[col] = inputs[col]
-            for _ in range(config.training.cnn_repetition):
-                per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
-                                                                           kernel_size=s,
-                                                                           activation=tfa.activations.mish,
-                                                                           padding='causal',
-                                                                           kernel_initializer='lecun_normal',
-                                                                           name=names.__next__())(per_stream[col])
-                                                             for s in [3, 7]],
-                                                     axis=-1, name=names.__next__(), )
-                per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
-                per_stream[col] = layers.SpatialDropout1D(config.training.dropout)(per_stream[col])
+            # for _ in range(config.training.cnn_repetition):
+            #     per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
+            #                                                                kernel_size=s,
+            #                                                                activation=tfa.activations.mish,
+            #                                                                padding='causal',
+            #                                                                kernel_initializer='lecun_normal',
+            #                                                                name=names.__next__())(per_stream[col])
+            #                                                  for s in [3, 7]],
+            #                                          axis=-1, name=names.__next__(), )
+            #     per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
+            #     per_stream[col] = layers.SpatialDropout1D(config.training.dropout)(per_stream[col])
 
     per_stream_list = list(per_stream.values())
     x = forgiving_concatenate(inputs=per_stream_list, axis=-1, name=names.__next__(), )
@@ -197,14 +197,16 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     for i in range(config.training.lstm_repetition):
         if i > 0:
             x = layers.Dropout(dropout)(x)
-        x = layers.LSTM(basic_block_size, return_sequences=True, stateful=stateful, name=names.__next__(), )(x)
+        x = layers.LSTM(basic_block_size, return_sequences=True, stateful=stateful, name=names.__next__(),
+                        kernel_regularizer=keras.regularizers.l2(config.training.l2_regularization), )(x)
         x = layers.BatchNormalization(name=names.__next__(), )(x)
 
     for i in range(config.training.dense_repetition):
         if i > 0:
             x = layers.Dropout(dropout)(x)
         x = layers.TimeDistributed(
-            layers.Dense(basic_block_size, activation=tfa.activations.mish, name=names.__next__()),
+            layers.Dense(basic_block_size, activation=tfa.activations.mish, name=names.__next__(),
+                         kernel_regularizer=keras.regularizers.l2(config.training.l2_regularization), ),
             name=names.__next__())(x)
 
     outputs = {}
@@ -216,6 +218,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
             loss[col] = keras.losses.CategoricalCrossentropy(
                 label_smoothing=tf.cast(config.training.label_smoothing, 'float32'),
             )  # does not work well with mixed precision and stateful model
+            loss[col] = Perplexity()
         if col in seq.regression_cols:
             shape = seq.shapes[col][-1]
             outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation=None), name=col)(x)
@@ -238,9 +241,9 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         #     name="CyclicScheduler")
         # opt = keras.optimizers.Adam(learning_rate=lr_schedule)
 
-        lr_schedule = FlatCosAnnealSchedule(decay_start=len(seq) * 13 + 400,  # Give extra epochs to big batch_size
+        lr_schedule = FlatCosAnnealSchedule(decay_start=len(seq) * 26 + 400,  # Give extra epochs to big batch_size
                                             initial_learning_rate=config.training.initial_learning_rate,
-                                            decay_steps=len(seq) * 18 + 400,
+                                            decay_steps=len(seq) * 170 + 400,
                                             alpha=0.01, )
         # Ranger hyper params based on https://github.com/fastai/imagenette/blob/master/2020-01-train.md
         opt = tfa.optimizers.RectifiedAdam(learning_rate=lr_schedule,
@@ -252,7 +255,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     model.compile(
         optimizer=opt,
         loss=loss,
-        metrics=create_metrics(config),
+        metrics=create_metrics((not stateful), config),
     )
 
     return model
