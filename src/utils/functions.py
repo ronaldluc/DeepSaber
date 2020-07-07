@@ -66,3 +66,10 @@ def debug_model(model: keras.Model):
         shapes = [x.shape for x in layer.weights]
         print(f'{layer.name:12}: {shapes}')
     model.summary()
+
+
+def name_generator(prefix):
+    id_ = 0
+    while True:
+        yield f'{prefix}{id_}'
+        id_ += 1

@@ -87,19 +87,20 @@ class DatasetConfig:
 
 @dataclass
 class TrainingConfig:
-    cnn_repetition: int = 0
-    lstm_repetition: int = 2
+    model_type: str = 'baseline'  # baseline / ddc / custom
+    cnn_repetition: int = 3
+    lstm_repetition: int = 1
     dense_repetition: int = 0
     model_size: int = 512
-    dropout: float = 0.3
-    initial_learning_rate: float = 1e-4  # 8e-3 default
+    dropout: float = 0.4
+    initial_learning_rate: float = 9e-3  # 8e-3 default
     data_split: Tuple = (0.0, 0.8, 0.9, 0.99,)
     AVS_proxy_ratio: float = 0.2  # Fraction of songs to compute AVS cosine similarity
     # if word reconstruction has to be used
     batch_size: float = 128
     label_smoothing: float = 0.5
     mixup_alpha: float = 0.5  # `mixup_alpha` == 0 => mixup is not used
-    l2_regularization: float = 3e-4
+    l2_regularization: float = 0.0
     use_difficulties: List = field(
         default_factory=lambda: ['Normal', 'Hard', 'Expert', ])
     categorical_groups: List = field(
@@ -149,13 +150,6 @@ class Config:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     generation: GenerationConfig = field(default_factory=GenerationConfig)
     base_data_folder: Path = ROOT_DIR / 'data'
-    # audio_processing = AudioProcessingConfig()
-    # utils = UtilsConfig()
-    # beat_preprocessing = BeatPreprocessingConfig()
-    # dataset = DatasetConfig()
-    # training = TrainingConfig()
-    # generation = GenerationConfig()
-    # base_data_folder = ROOT_DIR / 'data'
 
 
 class Timer:

@@ -9,7 +9,7 @@ from predict.api import generate_complete_beatmaps
 from process.api import create_song_list, load_datasets
 from train.callbacks import create_callbacks
 from train.metric import Perplexity
-from train.model import create_model, save_model
+from train.model import save_model, get_architecture_fn
 from train.sequence import BeatmapSequence
 from utils.types import Config, Timer
 
@@ -59,7 +59,7 @@ def main():
     train = True
     # train = False
     if train:
-        model = create_model(train_seq, False, config)
+        model = get_architecture_fn(config)(train_seq, False, config)
         model.summary()
 
         callbacks = create_callbacks(train_seq, config)

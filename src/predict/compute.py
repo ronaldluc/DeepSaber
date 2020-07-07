@@ -55,6 +55,7 @@ def generate_beatmap(beatmap_df: pd.DataFrame, seq: BeatmapSequence, stateful_mo
 
     start = time()
     total_len = len(beatmap_df) - 1
+    temperature = 0.80  # TODO: change toconfig.generation.temperature(0)
     for i in range(len(beatmap_df) - 1):
         elapsed = time() - start
         print(f'\r{i:4}: {int(elapsed):3} / ~{int(elapsed * total_len / (i + 1)):3} s', end='', flush=True)
@@ -62,13 +63,13 @@ def generate_beatmap(beatmap_df: pd.DataFrame, seq: BeatmapSequence, stateful_mo
 
         # word_vec to word_id prob
         if 'word_vec' in stateful_model.output_names:
-            closest_words = action_model.similar_by_vector(pred['word_vec'], topn=3, restrict_vocab=None)
+            closest_words = action_model.similar_by_vector(pred['word_vec'].flatten(), topn=3, restrict_vocab=None)
 
-            pred['word_id'] = np.zeros((1, 1, seq.shapes['word_id']))
+            pred['word_id'] = np.zeros((1, 1, config.dataset.num_classes['word_id']))
             for word, distance in closest_words:
-                pred['word_id'][word_id_dict[word]] = distance
+                pred['word_id'][:, :, word_id_dict[word]] = distance
 
-        update_next(i, output_names, pred, most_recent, seq, config)
+        update_next(i, output_names, pred, most_recent, seq, temperature, config)
 
         update_action_representations(i, action_model, seq, word_id_dict, pred, reverse_word_id_dict, config)
 
@@ -78,6 +79,17 @@ def generate_beatmap(beatmap_df: pd.DataFrame, seq: BeatmapSequence, stateful_mo
         # get last action in the correct format
         most_recent = {col: seq[0][0][col][:, i + 1:i + 2] for col in stateful_model.input_names}
 
+        window_size = 9
+        new = seq.data['prev_word_vec'][:, i - window_size + 1:i + 1].mean(axis=1)
+        old = seq.data['prev_word_vec'][:, i - window_size - window_size // 2:i - window_size // 2 + 1].mean(axis=1)
+        # print(f' {new.shape=} {old.shape=}', end='')
+        if new.shape == old.shape:
+            velocity = (np.sum((new - old) ** 2)) ** (1 / 2)
+            if np.isfinite(velocity):
+                temperature = min(0.95 - velocity * 0.05, 0.75)
+            print(f' {velocity:4.2f} | {temperature:4.2f}', end='')
+
+    save_velocity_hist(seq, config)
     beatmap_df = predictions2df(beatmap_df, seq)
     # beatmap_df = append_last_prediction(beatmap_df, most_recent)    # TODO: Remove if unnecessary
 
@@ -85,6 +97,26 @@ def generate_beatmap(beatmap_df: pd.DataFrame, seq: BeatmapSequence, stateful_mo
         beatmap_df[col] = beatmap_df[f'prev_{col}']
 
     return beatmap_df[stateful_model.output_names]  # output only generated columns
+
+
+def cosine_dist(a, b):
+    return 1 - np.sum(a * b, axis=-1) / (np.linalg.norm(a, axis=-1) * np.linalg.norm(b, axis=-1))
+
+
+def l2_dist(a, b):
+    diff = a - b
+    dist = ((diff.dropna() ** 2).sum(axis=1)) ** (1 / 2)
+    return dist
+
+
+def save_velocity_hist(seq, config):
+    mean = pd.DataFrame(seq.data['prev_word_vec'][0]).rolling(7).mean()
+    velocity = l2_dist(mean, mean.shift(4))
+    # velocity = cosine_dist(mean.values, mean.shift(4).values)
+    ax = pd.Series(velocity).dropna().plot.hist(bins=24, figsize=(14, 6), density=True, alpha=0.5, )
+    ax.set_xlim(0, 5)
+    fig = ax.get_figure()
+    fig.savefig(config.base_data_folder / 'temp' / 'distribution.pdf')
 
 
 def update_action_representations(i, action_model: gensim.models.KeyedVectors, seq, word_id_dict, pred,
@@ -156,14 +188,14 @@ def predictions2df(beatmap_df, seq):
 
 
 # @numba.njit()
-def update_next(i, output_names, pred, most_recent, seq: BeatmapSequence, config: Config):
+def update_next(i, output_names, pred, most_recent, seq: BeatmapSequence, temperature, config: Config):
     # for col, val in zip(output_names, pred):  # TF 2.1
     for col, val in pred.items():  # TF 2.2+
         col = f'prev_{col}'
 
         if col in seq.categorical_cols:
             # val = softmax(val ** 100, axis=-1)
-            val = np.log(val) / np.max([config.generation.temperature(i), 1e-6])
+            val = np.log(val) / np.max([temperature, 1e-6])
             val = softmax(val, axis=-1)
             chosen_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten() / np.sum(val))  # categorical dist
             seq.data[col][:, i + 1] = chosen_index
