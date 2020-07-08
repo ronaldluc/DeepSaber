@@ -19,15 +19,6 @@ def create_metrics(is_train, config: Config):
     return ['acc', ]
 
 
-def mean_pred(y_true, y_pred):
-    print('=' * 42)
-    print('True labels')
-    print(y_true)
-    print('Pred labels')
-    print(y_pred)
-    return K.backend.mean(y_pred)
-
-
 def compute_acc(res_dict):
     acc = [val for key, val in res_dict.items() if 'acc' in key]
     if len(acc) == 0:

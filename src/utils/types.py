@@ -88,7 +88,7 @@ class DatasetConfig:
 @dataclass
 class TrainingConfig:
     model_type: str = 'baseline'  # baseline / ddc / custom
-    cnn_repetition: int = 3
+    cnn_repetition: int = 0
     lstm_repetition: int = 1
     dense_repetition: int = 0
     model_size: int = 512

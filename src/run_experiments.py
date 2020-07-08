@@ -9,4 +9,5 @@ if __name__ == '__main__':
     # experiments.custom_model.main()
     # experiments.baseline_model.main()
     # experiments.ddc_model.main()
-    experiments.hypersearch_model.main()
+    # experiments.hypersearch_model.main()
+    experiments.best_model_comparison.main()

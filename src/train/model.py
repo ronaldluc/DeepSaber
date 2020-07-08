@@ -99,7 +99,7 @@ class AVSModel(Model):
         return self.get_metrics_dict()
 
     def call(self, inputs, training=None, mask=None):
-        super(AVSModel, self).call(inputs, training=None, mask=None)
+        return super(AVSModel, self).call(inputs, training=None, mask=None)
 
     def get_config(self):
         super(AVSModel, self).get_config()
@@ -200,6 +200,7 @@ def baseline_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         model = AVSModel(inputs=inputs, outputs=outputs, config=config)
 
     opt = keras.optimizers.Adam(lr=config.training.initial_learning_rate)
+    # opt = keras.optimizers.SGD(lr=config.training.initial_learning_rate)
 
     model.compile(
         optimizer=opt,
@@ -251,6 +252,7 @@ def ddc_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     else:
         model = AVSModel(inputs=inputs, outputs=outputs, config=config)
 
+    # opt = keras.optimizers.Adam(lr=config.training.initial_learning_rate, clipnorm=5.0)
     opt = keras.optimizers.SGD(lr=config.training.initial_learning_rate, clipnorm=5.0)
 
     model.compile(
@@ -378,7 +380,7 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
 
 def clstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
-    def build_model(hp: kt.HyperParameters):
+    def build_model(hp: kt.HyperParameters, use_avs_model: bool = False):
         batch_size = 1 if stateful else None
         layer_names = name_generator('layer')
 
@@ -455,7 +457,10 @@ def clstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
             model = Model(inputs=inputs, outputs=outputs)
             opt = keras.optimizers.Adam()
         else:
-            model = Model(inputs=inputs, outputs=outputs)
+            if use_avs_model:
+                model = AVSModel(inputs=inputs, outputs=outputs, config=config)
+            else:
+                model = Model(inputs=inputs, outputs=outputs)
 
             lr_schedule = FlatCosAnnealSchedule(decay_start=len(seq) * 15 + 400,  # Give extra epochs to big batch_size
                                                 initial_learning_rate=hp.Choice('initial_learning_rate',
@@ -481,7 +486,7 @@ def clstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
 
 def multi_lstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
-    def build_model(hp: kt.HyperParameters):
+    def build_model(hp: kt.HyperParameters, use_avs_model: bool = False):
         batch_size = 1 if stateful else None
         layer_names = name_generator('layer')
 
@@ -494,12 +499,12 @@ def multi_lstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> M
             last_layer.append(inputs[col])
 
         random.seed(43)
-        for i in range(hp.Int(f'lstm_layers', 2, 6)):
+        for i in range(hp.Int(f'lstm_layers', 2, 7)):
             outs = []
             depth = hp.Int(f'depth_{i}', 4, 64, sampling='log')
             connections = min(hp.Int(f'connections_{i}', 1, 3), len(last_layer))
             dropout = hp.Float(f'dropout_{i}', 0, 0.5)
-            for width_i in range(hp.Int(f'width_{i}', 1, 32)):
+            for width_i in range(hp.Int(f'width_{i}', 1, 16)):
                 t = layers.LSTM(depth, return_sequences=True,
                                 name=f'lstm{i:03}_{width_i:03}_{layer_names.__next__()}',
                                 stateful=stateful, )(
@@ -531,7 +536,10 @@ def multi_lstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> M
             model = Model(inputs=inputs, outputs=outputs)
             opt = keras.optimizers.Adam()
         else:
-            model = Model(inputs=inputs, outputs=outputs)
+            if use_avs_model:
+                model = AVSModel(inputs=inputs, outputs=outputs, config=config)
+            else:
+                model = Model(inputs=inputs, outputs=outputs)
 
             lr_schedule = FlatCosAnnealSchedule(decay_start=len(seq) * 30,  # Give extra epochs to big batch_size
                                                 initial_learning_rate=hp.Choice('initial_learning_rate',
@@ -557,7 +565,7 @@ def multi_lstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> M
 
 
 def trivial_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Callable[..., Model]:
-    def build_model(hp: kt.HyperParameters) -> Model:
+    def build_model(hp: kt.HyperParameters, use_avs_model: bool = False) -> Model:
         batch_size = 1 if stateful else None
         layer_names = name_generator('layer')
         hyper_names = name_generator('hyper')
@@ -610,7 +618,7 @@ def save_model(model, model_path, train_seq, config, hp: Optional[kt.HyperParame
     config.training.batch_size = 1
     stateful_model = get_architecture_fn(config)(train_seq, True, config)
     if hp is not None:
-        stateful_model = stateful_model(hp)
+        stateful_model = stateful_model(hp, use_avs_model=True)
     plain_model = keras.Model(model.inputs, model.outputs)  # drops non-serializable metrics, etc.
     stateful_model.set_weights(plain_model.get_weights())
     plain_model.save(model_path / 'model.keras')
