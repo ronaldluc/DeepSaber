@@ -16,7 +16,7 @@ from tensorflow.python.keras.engine.training import _minimize
 from tensorflow.python.ops import embedding_ops
 
 from train.learning_rate_schedule import FlatCosAnnealSchedule
-from train.metric import create_metrics, CosineDistance
+from train.metric import create_metrics, CosineDistance, Perplexity
 from train.sequence import BeatmapSequence
 from utils.functions import y2action_word, create_word_mapping, name_generator
 from utils.types import Config
@@ -32,6 +32,12 @@ def get_architecture_fn(config: Config) -> Callable[..., Model]:
         'trivial_tune': trivial_tuning_model,
     }
     return architecture[config.training.model_type]
+
+
+def drop_batch(y):
+    dim = tf.reduce_prod(tf.shape(y)[:-1])
+    flatten_y = tf.reshape(y, [dim, -1])
+    return flatten_y
 
 
 class AVSModel(Model):
@@ -55,6 +61,11 @@ class AVSModel(Model):
             'avs_l1': tf.keras.metrics.MeanAbsoluteError('avs_l1'),
             'avs_l2': tf.keras.metrics.MeanSquaredError('avs_l2'),
         }
+        self.id_metrics = {
+            'id_acc': tf.keras.metrics.CategoricalAccuracy('id_acc'),
+            'id_top5': tf.keras.metrics.TopKCategoricalAccuracy(k=5, name='id_top5'),
+            'perplexity': Perplexity(),
+        }
         self.config = config
         if not self.config.dataset.action_word_model_path.exists():
             raise FileNotFoundError(
@@ -66,11 +77,12 @@ class AVSModel(Model):
         self.word_id_dict = create_word_mapping(self.word_model)  # TODO: Rename
         self.embeddings = tf.convert_to_tensor(np.concatenate([np.zeros((2, self.word_model.vectors.shape[-1])),
                                                                self.word_model.vectors]))  # 0: MASK, 1: UNK
+        self.normed_embeddings = tf.nn.l2_normalize(self.embeddings, axis=-1)
 
     @property
     def metrics(self) -> List:
         metrics: List = super(AVSModel, self).metrics
-        return metrics + list(self.vector_metrics.values())
+        return metrics + list(self.vector_metrics.values()) + list(self.id_metrics.values())
 
     def train_step(self, data):
         data = data_adapter.expand_1d(data)
@@ -111,6 +123,8 @@ class AVSModel(Model):
         if 'word_vec' in y.keys():
             y_vec = y['word_vec']
             y_pred_vec = y_pred['word_vec']
+            y['word_id'] = self.word_vec2word(drop_batch(y_vec))
+            y_pred['word_id'] = self.word_vec2word(drop_batch(y_pred_vec))
         elif 'word_id' in y.keys() or (set(y.keys()) >= set(self.config.dataset.beat_elements) and not train):
             y_vec = self.avs_embedding(y)
             y_pred_vec = self.avs_embedding(y_pred)
@@ -118,6 +132,13 @@ class AVSModel(Model):
         if y_vec is not None:
             for metric in self.vector_metrics.values():
                 metric.update_state(y_vec, y_pred_vec)
+        if 'word_id' in y.keys():
+            for metric in self.id_metrics.values():
+                flatten_y = drop_batch(y['word_id'])
+                flatten_y_pred = drop_batch(y_pred['word_id'])
+
+                metric.update_state(flatten_y, flatten_y_pred)
+                pass
 
     def get_metrics_dict(self):
         metrics = {m.name: m.result() for m in self.metrics}
@@ -131,6 +152,15 @@ class AVSModel(Model):
         except KeyError:  # Fallback for non-FastText based word embeddings
             word_vec = np.zeros((np.dot(*use_word.shape), self.word_model.vectors.shape[-1]), dtype=np.float32)
         return word_vec
+
+    def word_vec2word(self, word_vec):
+        normed_array = tf.nn.l2_normalize(word_vec, axis=-1)
+        transposed = tf.transpose(self.normed_embeddings, [1, 0])
+        normed_array = tf.cast(normed_array, dtype=transposed.dtype)
+        cosine_similarity = tf.matmul(normed_array, transposed)
+        # closest_words = tf.argmax(cosine_similarity, -1)  # shape [batch_size], type int64
+        closest_words = tf.nn.softmax(cosine_similarity, -1)  # shape [batch_size, embedding], type f32
+        return closest_words
 
     def avs_embedding(self, y):
         if 'word_id' in y:

@@ -13,6 +13,7 @@ from utils.types import Config
 def create_metrics(is_train, config: Config):
     if is_train:
         return ['acc',
+                tf.keras.metrics.CategoricalAccuracy(),
                 Perplexity(),
                 ]
     print('Create metrics not train')

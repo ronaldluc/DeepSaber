@@ -6,7 +6,7 @@ import tensorflow as tf
 from tensorflow import keras
 
 from predict.api import generate_complete_beatmaps
-from process.api import create_song_list, load_datasets
+from process.api import load_datasets
 from train.callbacks import create_callbacks
 from train.metric import Perplexity
 from train.model import save_model, get_architecture_fn
@@ -24,9 +24,9 @@ def main():
     config = Config()
 
     base_folder = config.base_data_folder
-    song_folders = create_song_list(config.dataset.beat_maps_folder)
-    total = len(song_folders)
-    print(f'Found {total} folders')
+    # song_folders = create_song_list(config.dataset.beat_maps_folder)
+    # total = len(song_folders)
+    # print(f'Found {total} folders')
 
     config.dataset.storage_folder = base_folder / 'new_datasets_config_test'
     # config.dataset.storage_folder = base_folder / 'old_datasets'

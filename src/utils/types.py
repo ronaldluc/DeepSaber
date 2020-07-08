@@ -87,9 +87,9 @@ class DatasetConfig:
 
 @dataclass
 class TrainingConfig:
-    model_type: str = 'baseline'  # baseline / ddc / custom
+    model_type: str = 'custom'  # baseline / ddc / custom
     cnn_repetition: int = 0
-    lstm_repetition: int = 1
+    lstm_repetition: int = 2
     dense_repetition: int = 0
     model_size: int = 512
     dropout: float = 0.4
@@ -122,8 +122,8 @@ class TrainingConfig:
         default_factory=lambda: [
             # DatasetConfig().beat_elements,
             # DatasetConfig().beat_actions,
-            # ['word_vec', ],
-            ['word_id', ],
+            ['word_vec', ],
+            # ['word_id', ],
         ])
 
 
