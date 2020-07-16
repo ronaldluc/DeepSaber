@@ -1,1 +1,6 @@
-from . import custom_model, baseline_model, ddc_model, hypersearch_model, best_model_comparison
+from . import baseline_model
+from . import best_model_comparison
+from . import custom_model
+from . import ddc_model
+from . import hypersearch_model
+from . import information_comparison

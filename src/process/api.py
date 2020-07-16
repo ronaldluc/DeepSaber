@@ -1,6 +1,7 @@
-import multiprocessing
+import logging
+import math
 import os
-from typing import Tuple
+from typing import Tuple, Optional, Union
 
 import gensim
 import numpy as np
@@ -17,7 +18,7 @@ def create_song_list(path):
     songs = []
     indicators = {'info.dat', 'info.json'}
     for root, _, files in os.walk(path, topdown=False):
-        if bool(indicators.intersection(set(files))):
+        if bool(indicators.intersection(set([name.lower() for name in files]))):
             songs.append(root)
 
     return songs
@@ -36,29 +37,30 @@ def recalculate_mfcc_df_cache(song_folders, config: Config):
     create_ogg_caches(ogg_paths, config)
 
 
-def songs2dataset(song_folders, config: Config) -> pd.DataFrame:
+def songs2dataset(song_folders, config: Config) -> Optional[pd.DataFrame]:
     print(f'\tCreate dataframe from songs in folders: {len(song_folders):7} folders')
     timer = Timer()
     recalculate_mfcc_df_cache(song_folders, config)
     timer('Recalculated MFCC cache')
 
-    pool = multiprocessing.Pool()
     folders_to_process = len(song_folders)
 
     inputs = ((s, config, (i, folders_to_process)) for i, s in enumerate(song_folders))
-    songs = pool.starmap(process_song_folder, inputs)
-    # songs = map(lambda x: process_song_folder(*x), inputs)    # single core version for debugging
+    # `spawn` to sidestep POSIX fork pain: https://pythonspeed.com/articles/python-multiprocessing/
+    songs = map(lambda x: process_song_folder(*x), inputs)  # single core version for debugging
+    # with multiprocessing.get_context("spawn").Pool(10) as pool:
+    #     songs = pool.starmap(process_song_folder, inputs)
+    # pool.close()
+    # pool.join()
+    # timer('Pool closed')
     timer('Computed partial dataframes from folders')
-
-    pool.close()
-    pool.join()
-    timer('Pool closed')
 
     songs = [x for x in songs if x is not None]
     timer('Filtered failed songs')
 
     if len(songs) == 0:
-        raise ValueError(f'Dataset creation collected 0 songs. Check if searching in correct folders.')
+        logging.warning(f'Dataset creation collected 0 songs. Check if searching in correct folders.')
+        return None
     df = pd.concat(songs)
     timer('Concatenated songs')
 
@@ -79,6 +81,8 @@ def df_post_processing(df, config):
         word_id_dict = create_word_mapping(action_model)
         df['word_id'] = df['word'].map(lambda word: word_id_dict.get(word, 1))  # 0: MASK, 1: UNK
     else:
+        logging.warning(f'Could not find action word model [{config.dataset.action_word_model_path}], '
+                        f'skipping word_vec and word_id.')
         df['word_vec'] = 0
         df['word_id'] = 0
 
@@ -87,8 +91,22 @@ def df_post_processing(df, config):
     return df
 
 
+def infinite2zero(x: Union[np.array, float, int]):
+    if type(x).__module__ == np.__name__:
+        if len(x[~np.isfinite(x)]) > 0:
+            print(f'Changed {x}')
+        x[~np.isfinite(x)] = 0.0
+        return x
+    if not math.isfinite(x):
+        return 0.0
+    return x
+
+
 def generate_datasets(song_folders, config: Config):
     timer = Timer()
+    mean, std = None, None
+    # regression_cols = sum(config.training.regression_groups, [])
+    regression_cols = ['mfcc', 'prev', 'next', 'part']
     for phase, split in zip(['train', 'val', 'test'],
                             zip(config.training.data_split,
                                 config.training.data_split[1:])
@@ -101,9 +119,22 @@ def generate_datasets(song_folders, config: Config):
         result_path = config.dataset.storage_folder / f'{phase}_beatmaps.pkl'
 
         df = songs2dataset(song_folders[split_from:split_to], config=config)
+        if df is None:
+            logging.warning(f'Skipped {phase} dataset. No songs.')
+            continue
         timer(f'Created {phase} dataset', 1)
-
         check_consistency(df)
+
+        for col in regression_cols:
+            df[col] = df[col].apply(infinite2zero)
+        timer(f'Added zeros {phase} dataset', 1)
+
+        if mean is None:
+            mean = {col: np.stack(df[col].values).mean(0, dtype=np.float32) for col in regression_cols}
+            std = {col: np.stack(df[col].values).std(0, dtype=np.float32) for col in regression_cols}
+        for col in regression_cols:
+            df[col] = df[col].apply(lambda x: (x - mean[col]) / (std[col] + 1e-6))
+        timer(f'Normalized {phase} dataset', 1)
 
         config.dataset.storage_folder.mkdir(parents=True, exist_ok=True)
         df.to_pickle(result_path, protocol=4)  # Protocol 4 for Python 3.6/3.7 compatibility
@@ -111,5 +142,9 @@ def generate_datasets(song_folders, config: Config):
 
 
 def load_datasets(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    return [pd.read_pickle(config.dataset.storage_folder / f'{phase}_beatmaps.pkl') for phase in
-            ['train', 'val', 'test']]
+    try:
+        datasets = [pd.read_pickle(config.dataset.storage_folder / f'{phase}_beatmaps.pkl') for phase in
+                    ['train', 'val', 'test']]
+        return datasets
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f'Check if searching in correct folders. {e}')

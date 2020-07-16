@@ -4,11 +4,11 @@ import tensorflow as tf
 from experiments.compute import init_test
 from predict.api import generate_complete_beatmaps
 from train.callbacks import create_callbacks
-from train.metric import Perplexity
+from train.metrics import Perplexity
 from train.model import save_model, \
     get_architecture_fn
 from train.sequence import BeatmapSequence
-from utils.types import Config
+from utils.types import Config, ModelType
 
 
 def main():
@@ -21,22 +21,23 @@ def main():
     # find_model = False
     train_model = True
     train_model = False
+    eval_model = True
+    eval_model = False
     if find_model:
         train_seq = BeatmapSequence(df=train, is_train=True, config=config)
         val_seq = BeatmapSequence(df=val, is_train=False, config=config)
         test_seq = BeatmapSequence(df=test, is_train=False, config=config)
 
-        config.training.model_type = 'multi_lstm_tune'
+        config.training.model_type = ModelType.TUNE_CLSTM
 
         tuner = kt.Hyperband(
             get_architecture_fn(config)(train_seq, False, config),
-            objective=kt.Objective('val_acc', direction='max'),
-            hyperband_iterations=2,
-            max_epochs=50,
-            factor=3,
+            objective=kt.Objective('val_avs_dist', direction='min'),
+            hyperband_iterations=1,
+            max_epochs=100,
+            factor=4,
             directory=base_folder / 'temp' / 'hyper_search',
-            # project_name='TEST',
-            project_name=f'{get_architecture_fn(config).__qualname__}5',
+            project_name=f'{get_architecture_fn(config).__qualname__}_id3',
             overwrite=False,  # TODO: CAUTION!
         )
         tuner.search_space_summary()
@@ -46,7 +47,7 @@ def main():
         tuner.search(x=train_seq,
                      validation_data=val_seq,
                      callbacks=callbacks,
-                     epochs=50,
+                     epochs=60,
                      verbose=2,
                      workers=10,
                      max_queue_size=16,
@@ -54,8 +55,8 @@ def main():
                      )
 
         print(tuner.results_summary())
-        # print(tuner.get_best_models(2)[0].summary())
-        # print(tuner.get_best_models(2)[0].evaluate(test_seq))
+        print(tuner.get_best_models(2)[0].summary())
+        print(tuner.get_best_models(2)[0].evaluate(test_seq))
 
     if train_model:
         hp = kt.HyperParameters()
@@ -112,21 +113,22 @@ def main():
         save_model(model, model_path, train_seq, config, hp=hp)
         timer('Saved model', 5)
 
-    stateful_model = tf.keras.models.load_model(model_path / 'stateful_model.keras',
-                                                custom_objects={'Perplexity': Perplexity})
+    if eval_model:
+        stateful_model = tf.keras.models.load_model(model_path / 'stateful_model.keras',
+                                                    custom_objects={'Perplexity': Perplexity})
 
-    timer('Loaded stateful model', 5)
+        timer('Loaded stateful model', 5)
 
-    input_folder = base_folder / 'human_beatmaps' / 'new_dataformat'
-    output_folder = base_folder / 'testing' / 'generated_songs'
-    song_codes_to_gen = list(x for x in test.index.to_frame()["name"].unique()[:5])
-    song_codes_to_gen = ['133b', ]
-    print(song_codes_to_gen)
-    for song_code in song_codes_to_gen:
-        beatmap_folder = input_folder / song_code
-        print(beatmap_folder)
-        generate_complete_beatmaps(beatmap_folder, output_folder, stateful_model, config)
-        timer('Generated beatmaps', 5)
+        input_folder = base_folder / 'human_beatmaps' / 'new_dataformat'
+        output_folder = base_folder / 'testing' / 'generated_songs'
+        song_codes_to_gen = list(x for x in test.index.to_frame()["name"].unique()[:5])
+        song_codes_to_gen = ['133b', ]
+        print(song_codes_to_gen)
+        for song_code in song_codes_to_gen:
+            beatmap_folder = input_folder / song_code
+            print(beatmap_folder)
+            generate_complete_beatmaps(beatmap_folder, output_folder, stateful_model, config)
+            timer('Generated beatmaps', 5)
 
 
 if __name__ == '__main__':

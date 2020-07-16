@@ -15,21 +15,21 @@ from tensorflow.python.keras.engine import data_adapter
 from tensorflow.python.keras.engine.training import _minimize
 from tensorflow.python.ops import embedding_ops
 
+from train import metrics
 from train.learning_rate_schedule import FlatCosAnnealSchedule
-from train.metric import create_metrics, CosineDistance, Perplexity
 from train.sequence import BeatmapSequence
 from utils.functions import y2action_word, create_word_mapping, name_generator
-from utils.types import Config
+from utils.types import Config, ModelType
 
 
 def get_architecture_fn(config: Config) -> Callable[..., Model]:
-    architecture = {  # TODO: Change Keys to Enum
-        'baseline': baseline_model,
-        'ddc': ddc_model,
-        'custom': create_model,
-        'clstm_tune': clstm_tuning_model,
-        'multi_lstm_tune': multi_lstm_tuning_model,
-        'trivial_tune': trivial_tuning_model,
+    architecture = {
+        ModelType.BASELINE: baseline_model,
+        ModelType.DDC: ddc_model,
+        ModelType.CUSTOM: custom_model,
+        ModelType.TUNE_BASELINE: trivial_tuning_model,
+        ModelType.TUNE_CLSTM: clstm_tuning_model,
+        ModelType.TUNE_MLSTM: multi_lstm_tuning_model,
     }
     return architecture[config.training.model_type]
 
@@ -57,14 +57,14 @@ class AVSModel(Model):
     def __init__(self, config: Config, *args, **kwargs):
         super(AVSModel, self).__init__(*args, **kwargs)
         self.vector_metrics = {
-            'avs_dist': CosineDistance('avs_dist'),
+            'avs_dist': metrics.CosineDistance('avs_dist'),
             'avs_l1': tf.keras.metrics.MeanAbsoluteError('avs_l1'),
             'avs_l2': tf.keras.metrics.MeanSquaredError('avs_l2'),
         }
         self.id_metrics = {
-            'id_acc': tf.keras.metrics.CategoricalAccuracy('id_acc'),
-            'id_top5': tf.keras.metrics.TopKCategoricalAccuracy(k=5, name='id_top5'),
-            'perplexity': Perplexity(),
+            'id_acc': tf.keras.metrics.CategoricalAccuracy('acc'),
+            'id_top5': tf.keras.metrics.TopKCategoricalAccuracy(k=5, name='top5_acc'),
+            'id_perplexity': metrics.Perplexity('perplexity'),
         }
         self.config = config
         if not self.config.dataset.action_word_model_path.exists():
@@ -117,28 +117,25 @@ class AVSModel(Model):
         super(AVSModel, self).get_config()
 
     def update_metrics(self, y_pred, y, sample_weight, train=False):
+        """ Compute all possible action representations to enable all metrics """
         self.compiled_metrics.update_state(y, y_pred, sample_weight)
 
-        y_vec, y_pred_vec = None, None
-        if 'word_vec' in y.keys():
-            y_vec = y['word_vec']
-            y_pred_vec = y_pred['word_vec']
-            y['word_id'] = self.word_vec2word(drop_batch(y_vec))
-            y_pred['word_id'] = self.word_vec2word(drop_batch(y_pred_vec))
-        elif 'word_id' in y.keys() or (set(y.keys()) >= set(self.config.dataset.beat_elements) and not train):
-            y_vec = self.avs_embedding(y)
-            y_pred_vec = self.avs_embedding(y_pred)
+        if 'word_vec' in y.keys() and 'word_id' not in y.keys():
+            y['word_id'] = self.word_vec2word(drop_batch(y['word_vec']))
+            y_pred['word_id'] = self.word_vec2word(drop_batch(y_pred['word_vec']))
+        elif ('word_id' in y.keys() or (set(y.keys()) >= set(self.config.dataset.beat_elements) and not train)) \
+                and 'word_vec' not in y.keys():
+            y['word_vec'] = self.avs_embedding(y)
+            y_pred['word_vec'] = self.avs_embedding(y_pred)
 
-        if y_vec is not None:
+        if 'word_vec' in y.keys():
             for metric in self.vector_metrics.values():
-                metric.update_state(y_vec, y_pred_vec)
+                metric.update_state(y['word_vec'], y_pred['word_vec'])
         if 'word_id' in y.keys():
             for metric in self.id_metrics.values():
                 flatten_y = drop_batch(y['word_id'])
                 flatten_y_pred = drop_batch(y_pred['word_id'])
-
                 metric.update_state(flatten_y, flatten_y_pred)
-                pass
 
     def get_metrics_dict(self):
         metrics = {m.name: m.result() for m in self.metrics}
@@ -158,9 +155,10 @@ class AVSModel(Model):
         transposed = tf.transpose(self.normed_embeddings, [1, 0])
         normed_array = tf.cast(normed_array, dtype=transposed.dtype)
         cosine_similarity = tf.matmul(normed_array, transposed)
-        # closest_words = tf.argmax(cosine_similarity, -1)  # shape [batch_size], type int64
-        closest_words = tf.nn.softmax(cosine_similarity, -1)  # shape [batch_size, embedding], type f32
-        return closest_words
+        return cosine_similarity
+        # x = cosine_similarity - tf.math.reduce_min(cosine_similarity)    # get pseudo probability
+        # closest_words = tf.linalg.normalize(x, ord=1, axis=-1)[0]        # we can achieve arbitrary perplexity
+        # return closest_words
 
     def avs_embedding(self, y):
         if 'word_id' in y:
@@ -235,7 +233,7 @@ def baseline_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     model.compile(
         optimizer=opt,
         loss=loss,
-        metrics=create_metrics((not stateful), config),
+        metrics=metrics.create_metrics((not stateful), config),
     )
 
     return model
@@ -282,19 +280,19 @@ def ddc_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     else:
         model = AVSModel(inputs=inputs, outputs=outputs, config=config)
 
-    # opt = keras.optimizers.Adam(lr=config.training.initial_learning_rate, clipnorm=5.0)
-    opt = keras.optimizers.SGD(lr=config.training.initial_learning_rate, clipnorm=5.0)
+    opt = keras.optimizers.Adam(lr=config.training.initial_learning_rate, clipnorm=5.0)
+    # opt = keras.optimizers.SGD(lr=config.training.initial_learning_rate, clipnorm=5.0)
 
     model.compile(
         optimizer=opt,
         loss=loss,
-        metrics=create_metrics((not stateful), config),
+        metrics=metrics.create_metrics((not stateful), config),
     )
 
     return model
 
 
-def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
+def custom_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     batch_size = 1 if stateful else None
     names = name_generator('layer')
 
@@ -337,7 +335,6 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
                                                      axis=-1, name=names.__next__(), )
                 per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
                 per_stream[col] = layers.SpatialDropout1D(config.training.dropout)(per_stream[col])
-                # layers.Add
 
     per_stream_list = list(per_stream.values())
     x = forgiving_concatenate(inputs=per_stream_list, axis=-1, name=names.__next__(), )
@@ -370,7 +367,8 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         if col in seq.regression_cols:
             shape = seq.shapes[col][-1]
             outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation=None), name=col)(x)
-            loss[col] = 'mse'
+            # loss[col] = 'mse'
+            loss[col] = keras.losses.CosineSimilarity(name='cos_sim')
 
     if stateful or config.training.AVS_proxy_ratio == 0:
         if config.training.AVS_proxy_ratio == 0:
@@ -389,9 +387,9 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         #     name="CyclicScheduler")
         # opt = keras.optimizers.Adam(learning_rate=lr_schedule)
 
-        lr_schedule = FlatCosAnnealSchedule(decay_start=len(seq) * 15 + 400,  # Give extra epochs to big batch_size
+        lr_schedule = FlatCosAnnealSchedule(decay_start=len(seq) * 21 + 400,  # Give extra epochs to big batch_size
                                             initial_learning_rate=config.training.initial_learning_rate,
-                                            decay_steps=len(seq) * 21 + 400,
+                                            decay_steps=len(seq) * 28 + 400,
                                             alpha=0.01, )
         # Ranger hyper params based on https://github.com/fastai/imagenette/blob/master/2020-01-train.md
         opt = tfa.optimizers.RectifiedAdam(learning_rate=lr_schedule,
@@ -403,14 +401,14 @@ def create_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     model.compile(
         optimizer=opt,
         loss=loss,
-        metrics=create_metrics((not stateful), config),
+        metrics=metrics.create_metrics((not stateful), config),
     )
 
     return model
 
 
 def clstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
-    def build_model(hp: kt.HyperParameters, use_avs_model: bool = False):
+    def build_model(hp: kt.HyperParameters, use_avs_model: bool = True):
         batch_size = 1 if stateful else None
         layer_names = name_generator('layer')
 
@@ -418,53 +416,82 @@ def clstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         per_stream = {}
         cnn_activation = {'relu': keras.activations.relu,
                           'elu': keras.activations.elu,
-                          'mish': tfa.activations.mish}[hp.Choice('cnn_activation', ['relu', 'elu', 'mish'])]
+                          'mish': tfa.activations.mish}[hp.Choice('cnn_activation', ['relu', 'mish'])]
+
+        cat_cnn_repetition = hp.Int('cat_cnn_repetition', 0, 4)
+        cnn_spatial_dropout = hp.Float('spatial_dropout', 0.0, 0.5)
+        cat_cnn_filters = hp.Int('cat_cnn_filters', 64, 256, sampling='log')
+        reg_cnn_repetition = hp.Int('reg_cnn_repetition', 0, 4)
+        reg_cnn_filters = hp.Int('reg_cnn_filters', 64, 256, sampling='log')
+        cnn_kernel_size = hp.Choice(f'cnn_kernel_size', ['1', '3', '35', '37', ])
 
         for col in seq.x_cols:
-            spatial_dropout = hp.Float(f'{col}_spartial_dropout', 0.0, 0.5)
-            shape = None, *seq.shapes[col][2:]
-            inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
-            per_stream[f'{col}'] = inputs[col]
-            for i in range(hp.Int(f'{col}_cnn_layers_{layer_names.__next__()}', 0, 4)):
-                per_stream[col] = forgiving_concatenate(inputs=[
-                    layers.Conv1D(filters=hp.Int(f'{col}_{i}_{conv_i}',
-                                                 32, 256, sampling='log'),
-                                  kernel_size=int(s),
-                                  activation=cnn_activation,
-                                  padding='causal',
-                                  kernel_initializer='lecun_normal',
-                                  name=layer_names.__next__())(per_stream[col])
-                    for conv_i, s in enumerate(hp.Choice(f'{col}_{i}_cnn_type', ['3', '35', '37', '357']))],
-                    axis=-1, name=layer_names.__next__(), )
-                per_stream[col] = layers.BatchNormalization(name=layer_names.__next__(), )(per_stream[col])
-                per_stream[col] = layers.SpatialDropout1D(spatial_dropout)(per_stream[col])
+            if col in seq.categorical_cols:
+                shape = None, *seq.shapes[col][2:]
+                inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
+                per_stream[col] = inputs[col]
+                for _ in range(cat_cnn_repetition):
+                    per_stream[col] = forgiving_concatenate(inputs=[
+                        layers.Conv1D(filters=cat_cnn_filters,
+                                      kernel_size=int(s),
+                                      activation=cnn_activation,
+                                      padding='causal',
+                                      kernel_initializer='lecun_normal',
+                                      name=layer_names.__next__())(per_stream[col])
+                        for conv_i, s in enumerate(cnn_kernel_size)],
+                        axis=-1, name=layer_names.__next__(), )
+                    per_stream[col] = layers.BatchNormalization(name=layer_names.__next__(), )(per_stream[col])
+                    per_stream[col] = layers.SpatialDropout1D(cnn_spatial_dropout)(per_stream[col])
+            if col in seq.regression_cols:
+                shape = None, *seq.shapes[col][2:]
+                inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
+                per_stream[col] = inputs[col]
+                for _ in range(reg_cnn_repetition):
+                    per_stream[col] = forgiving_concatenate(inputs=[
+                        layers.Conv1D(filters=reg_cnn_filters,
+                                      kernel_size=int(s),
+                                      activation=cnn_activation,
+                                      padding='causal',
+                                      kernel_initializer='lecun_normal',
+                                      name=layer_names.__next__())(per_stream[col])
+                        for conv_i, s in enumerate(cnn_kernel_size)],
+                        axis=-1, name=layer_names.__next__(), )
+                    per_stream[col] = layers.BatchNormalization(name=layer_names.__next__(), )(per_stream[col])
+                    per_stream[col] = layers.SpatialDropout1D(cnn_spatial_dropout)(per_stream[col])
 
         per_stream_list = list(per_stream.values())
         x = forgiving_concatenate(inputs=per_stream_list, axis=-1, name=layer_names.__next__(), )
 
-        for i in range(hp.Int(f'lstm_layers', 0, 3)):
-            x = layers.LSTM(hp.Int(f'{i}_lstm_layer',
-                                   32, 512, sampling='log'), return_sequences=True, stateful=stateful,
-                            name=layer_names.__next__(),
-                            kernel_regularizer=keras.regularizers.l2(hp.Choice(f'{i}_lstm_l2',
-                                                                               [1e-2, 1e-3, 1e-4, 1e-5, 0.0]), ))(x)
-            x = layers.BatchNormalization(name=layer_names.__next__(), )(x)
-            x = layers.Dropout(hp.Float(f'{i}_lstm_dropout', 0.0, 0.6))(x)
+        lstm_repetition = hp.Int('lstm_repetition', 0, 4)
+        lstm_dropout = hp.Float('lstm_dropout', 0.0, 0.6)
+        lstm_l2_regularizer = hp.Choice('lstm_l2_regularizer', [1e-2, 1e-4, 1e-6, 0.0])
 
-        spatial_dropout = hp.Float(f'out_spartial_dropout', 0.0, 0.5)
-        for i in range(hp.Int(f'out_cnn_layers_{layer_names.__next__()}', 0, 2)):
+        for i in range(lstm_repetition):
+            if i > 0:
+                x = layers.Dropout(lstm_dropout)(x)
+            x = layers.LSTM(hp.Int(f'lstm_{i}_units', 128, 384, sampling='log'), return_sequences=True,
+                            stateful=stateful, name=layer_names.__next__(),
+                            kernel_regularizer=keras.regularizers.l2(lstm_l2_regularizer), )(x)
+            x = layers.BatchNormalization(name=layer_names.__next__(), )(x)
+
+        end_cnn_repetition = hp.Int('end_cnn_repetition', 0, 2)
+        end_spatial_dropout = hp.Float('end_spatial_dropout', 0.0, 0.5)
+        end_cnn_filters = hp.Int('end_cnn_filters', 128, 384, sampling='log')
+        end_cnn_kernel_size = hp.Choice(f'end_cnn_kernel_size', ['1', '3', ])
+
+        for _ in range(end_cnn_repetition):
+            x = layers.SpatialDropout1D(end_spatial_dropout)(x)
             x = forgiving_concatenate(inputs=[
-                layers.Conv1D(filters=hp.Int(f'out_{i}_{conv_i}',
-                                             32, 256, sampling='log'),
+                layers.Conv1D(filters=end_cnn_filters,
                               kernel_size=int(s),
                               activation=cnn_activation,
                               padding='causal',
                               kernel_initializer='lecun_normal',
                               name=layer_names.__next__())(x)
-                for conv_i, s in enumerate(hp.Choice(f'out_{i}_cnn_type', ['1', '3', '35', '37', '357']))],
+                for conv_i, s in enumerate(end_cnn_kernel_size)],
                 axis=-1, name=layer_names.__next__(), )
             x = layers.BatchNormalization(name=layer_names.__next__(), )(x)
-            x = layers.SpatialDropout1D(spatial_dropout)(x)
+            x = layers.SpatialDropout1D(end_spatial_dropout)(x)
 
         outputs = {}
         loss = {}
@@ -473,7 +500,7 @@ def clstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
                 shape = seq.shapes[col][-1]
                 outputs[col] = layers.TimeDistributed(layers.Dense(shape, activation='softmax'), name=col)(x)
                 loss[col] = keras.losses.CategoricalCrossentropy(
-                    label_smoothing=tf.cast(hp.Float('label_smoothing', 0.0, 0.7), 'float32'),
+                    label_smoothing=tf.cast(hp.Float('label_smoothing', 0.0, 0.6), 'float32'),
                 )  # does not work well with mixed precision and stateful model
             if col in seq.regression_cols:
                 shape = seq.shapes[col][-1]
@@ -487,16 +514,16 @@ def clstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
             model = Model(inputs=inputs, outputs=outputs)
             opt = keras.optimizers.Adam()
         else:
-            if use_avs_model:
-                model = AVSModel(inputs=inputs, outputs=outputs, config=config)
-            else:
-                model = Model(inputs=inputs, outputs=outputs)
+            model = AVSModel(inputs=inputs, outputs=outputs, config=config)
 
-            lr_schedule = FlatCosAnnealSchedule(decay_start=len(seq) * 15 + 400,  # Give extra epochs to big batch_size
+            decay_start_epoch = hp.Int('decay_start_epoch', 15, 40)
+            decay_end_epoch = (decay_start_epoch * 4) // 3
+            lr_schedule = FlatCosAnnealSchedule(decay_start=len(seq) * decay_start_epoch,
+                                                # Give extra epochs to big batch_size
                                                 initial_learning_rate=hp.Choice('initial_learning_rate',
-                                                                                [3e-2, 1e-2, 3e-3, 1e-3]),
-                                                decay_steps=len(seq) * 25 + 400,
-                                                alpha=0.01, )
+                                                                                [3e-2, 1e-2, 8e-3]),
+                                                decay_steps=len(seq) * decay_end_epoch,
+                                                alpha=0.001, )
             # Ranger hyper params based on https://github.com/fastai/imagenette/blob/master/2020-01-train.md
             opt = tfa.optimizers.RectifiedAdam(learning_rate=lr_schedule,
                                                beta_1=0.95,
@@ -507,7 +534,7 @@ def clstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         model.compile(
             optimizer=opt,
             loss=loss,
-            metrics=create_metrics((not stateful), config),
+            metrics=metrics.create_metrics((not stateful), config),
         )
 
         return model
@@ -586,7 +613,7 @@ def multi_lstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> M
         model.compile(
             optimizer=opt,
             loss=loss,
-            metrics=create_metrics((not stateful), config),
+            metrics=metrics.create_metrics((not stateful), config),
         )
 
         return model

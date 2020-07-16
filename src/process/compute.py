@@ -217,7 +217,7 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
     for dirpath, dirnames, filenames in os.walk(folder):
         files.extend(filenames)
         break
-    info_path = os.path.join(folder, [x for x in files if 'info' in x][0])
+    info_path = os.path.join(folder, [x for x in files if 'info' in x.lower()][0])
     file_ogg = os.path.join(folder, [x for x in files if x.endswith('gg')][0])
     folder_name = folder.split('/')[-1]
     df_difficulties = []
@@ -240,7 +240,7 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
                 df_difficulties.append(df)
             except (ValueError, IndexError, KeyError, UnicodeDecodeError) as e:
                 print(
-                    f'\n\t[process | process_song_folder] Skipped file {folder_name}/{difficulty}  |  {folder}:\n\t\t{e}',
+                    f'\n\t[process | process_song_folder] Skipped file {folder_name}/{difficulty} | {folder}:\n\t\t{e}',
                     file=stderr)
 
     if df_difficulties:

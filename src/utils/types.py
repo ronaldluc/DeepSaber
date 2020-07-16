@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from enum import Enum, auto
 from time import time
 from typing import Tuple, Dict, Callable
 from typing import Union, Mapping, List
@@ -9,6 +10,16 @@ JSON = Union[str, int, float, bool, None, Mapping[str, 'JSON'], List['JSON']]
 from pathlib import Path
 
 ROOT_DIR: Path = Path(__file__).parents[2]
+
+
+class ModelType(Enum):
+    BASELINE = auto()
+    DDC = auto()
+    CUSTOM = auto()
+    # Tunable models, which require kt.HyperParameters
+    TUNE_BASELINE = auto()
+    TUNE_CLSTM = auto()
+    TUNE_MLSTM = auto()
 
 
 @dataclass
@@ -87,7 +98,7 @@ class DatasetConfig:
 
 @dataclass
 class TrainingConfig:
-    model_type: str = 'custom'  # baseline / ddc / custom
+    model_type: ModelType = ModelType.CUSTOM  # baseline / ddc / custom
     cnn_repetition: int = 0
     lstm_repetition: int = 2
     dense_repetition: int = 0
@@ -108,7 +119,7 @@ class TrainingConfig:
                                  DatasetConfig().categorical, ['word_id', 'prev_word_id', ]])
 
     # in dataset groups List(List(str))
-    regression_groups: Tuple = field(
+    regression_groups: List = field(
         default_factory=lambda: [DatasetConfig().audio, DatasetConfig().regression,
                                  ['word_vec', 'prev_word_vec', ]])  # in dataset groups
     x_groups: Tuple = field(
@@ -122,8 +133,8 @@ class TrainingConfig:
         default_factory=lambda: [
             # DatasetConfig().beat_elements,
             # DatasetConfig().beat_actions,
-            ['word_vec', ],
-            # ['word_id', ],
+            # ['word_vec', ],
+            ['word_id', ],
         ])
 
 

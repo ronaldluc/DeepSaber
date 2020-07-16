@@ -194,7 +194,6 @@ def update_next(i, output_names, pred, most_recent, seq: BeatmapSequence, temper
         col = f'prev_{col}'
 
         if col in seq.categorical_cols:
-            # val = softmax(val ** 100, axis=-1)
             val = np.log(val) / np.max([temperature, 1e-6])
             val = softmax(val, axis=-1)
             chosen_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten() / np.sum(val))  # categorical dist

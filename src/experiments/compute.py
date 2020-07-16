@@ -42,6 +42,7 @@ def eval_config(csv_file, timer, return_list, train, val, test, config, test_nam
                                       args=(train, val, test, config, return_list, hp))
     process.start()
     process.join()
+    process.close()
 
     history, eval_metrics = return_list
     eval_metrics['history'] = history
@@ -77,7 +78,7 @@ def get_config_model_loss(train, val, test, config, return_list, hp: Optional[kt
     history = model.fit(train_seq,
                         validation_data=val_seq,
                         callbacks=callbacks,
-                        epochs=150,
+                        epochs=150,  # TODO: Change
                         verbose=2,
                         workers=10,
                         max_queue_size=16,
@@ -106,7 +107,7 @@ def init_test():
     print(f'Found {total} folders')
 
     config.dataset.storage_folder = base_folder / 'new_datasets'
-    config.dataset.storage_folder = base_folder / 'new_datasets_config_test'
+    # config.dataset.storage_folder = base_folder / 'new_datasets_config_test'
     # config.dataset.storage_folder = base_folder / 'test_datasets'
     # config.audio_processing.use_cache = False
     # generate_datasets(song_folders, config, prefix)
