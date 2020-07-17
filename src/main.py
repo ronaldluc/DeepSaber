@@ -6,7 +6,7 @@ import tensorflow as tf
 from tensorflow import keras
 
 from predict.api import generate_complete_beatmaps
-from process.api import load_datasets, generate_datasets, create_song_list
+from process.api import load_datasets, create_song_list
 from train.callbacks import create_callbacks
 from train.metrics import Perplexity
 from train.model import save_model, get_architecture_fn
@@ -26,7 +26,7 @@ def main():
 
     base_folder = config.base_data_folder
 
-    song_folders = create_song_list(config.dataset.beat_maps_folder)
+    song_folders = create_song_list(config.dataset.beat_maps_folder)  # [:100]
 
     # total = len(song_folders)
     # print(f'Found {total} folders')
@@ -35,20 +35,9 @@ def main():
     # config.dataset.storage_folder = base_folder / 'old_datasets'
     # config.dataset.storage_folder = base_folder / 'new_datasets'
     config.dataset.storage_folder = base_folder / 'test_datasets'
-    config.audio_processing.use_cache = False
+    config.audio_processing.use_cache = True
 
-    # #### TODO: DELETE
-    config.training.data_split = (0.0, 1.0, 1.0, 1.0,)
-    # data_folder = Path('../../data')
-    # config.base_data_folder = data_folder
-    base_folder = config.base_data_folder
-    config.dataset.beat_maps_folder = base_folder / 'evaluation_dataset' / 'beat_sage'
-    print(config.dataset.beat_maps_folder)
-    config.dataset.storage_folder = base_folder / 'beatsage_datasets'
-    song_folders = create_song_list(config.dataset.beat_maps_folder)
-    #########
-
-    generate_datasets(song_folders, config)
+    # generate_datasets(song_folders, config)
 
     train, val, test = load_datasets(config)
     timer('Loaded datasets', 5)
@@ -100,12 +89,16 @@ def main():
     stateful_model.summary()
     timer('Loaded stateful model', 5)
 
-    input_folder = base_folder / 'human_beatmaps' / 'new_dataformat'
-    output_folder = base_folder / 'testing' / 'generated_songs'
-    song_codes_to_gen = list(x for x in test.index.to_frame()["name"].unique()[:5])
-    song_codes_to_gen = ['133b', ]
-    print(song_codes_to_gen)
-    for song_code in song_codes_to_gen:
+    input_folder = base_folder / 'evaluation_dataset' / 'beat_sage'
+    # input_folder = base_folder / 'human_beatmaps' / 'new_dataformat'
+    # output_folder = base_folder / 'testing' / 'generated_songs'
+    output_folder = base_folder / 'evaluation_dataset' / 'deepsaber_vec:vec'
+    dirs = [x for x in input_folder.glob('*/') if x.is_dir()]
+    # dirs = list(x for x in test.index.to_frame()["name"].unique()[:13])
+    # dirs = ['133b', ]
+    config.generation.temperature = 0.7175201278496998
+
+    for song_code in dirs:
         beatmap_folder = input_folder / song_code
         print(beatmap_folder)
         generate_complete_beatmaps(beatmap_folder, output_folder, stateful_model, config)

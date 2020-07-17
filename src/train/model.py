@@ -189,7 +189,7 @@ def forgiving_concatenate(inputs, axis=-1, **kwargs):
 
 
 def baseline_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
-    batch_size = 1 if stateful else None
+    batch_size = config.generation.batch_size if stateful else None
     names = name_generator('layer')
 
     inputs = {}
@@ -240,7 +240,7 @@ def baseline_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
 
 def ddc_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
-    batch_size = 1 if stateful else None
+    batch_size = config.generation.batch_size if stateful else None
     names = name_generator('layer')
 
     inputs = {}
@@ -293,7 +293,7 @@ def ddc_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
 
 def custom_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
-    batch_size = 1 if stateful else None
+    batch_size = config.generation.batch_size if stateful else None
     names = name_generator('layer')
 
     inputs = {}
@@ -409,7 +409,7 @@ def custom_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
 def clstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     def build_model(hp: kt.HyperParameters, use_avs_model: bool = True):
-        batch_size = 1 if stateful else None
+        batch_size = config.generation.batch_size if stateful else None
         layer_names = name_generator('layer')
 
         inputs = {}
@@ -544,7 +544,7 @@ def clstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
 def multi_lstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     def build_model(hp: kt.HyperParameters, use_avs_model: bool = False):
-        batch_size = 1 if stateful else None
+        batch_size = config.generation.batch_size if stateful else None
         layer_names = name_generator('layer')
 
         inputs = {}
@@ -623,7 +623,7 @@ def multi_lstm_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> M
 
 def trivial_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Callable[..., Model]:
     def build_model(hp: kt.HyperParameters, use_avs_model: bool = False) -> Model:
-        batch_size = 1 if stateful else None
+        batch_size = config.generation.batch_size if stateful else None
         layer_names = name_generator('layer')
         hyper_names = name_generator('hyper')
 

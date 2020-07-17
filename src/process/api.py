@@ -47,7 +47,7 @@ def songs2dataset(song_folders, config: Config) -> Optional[pd.DataFrame]:
 
     inputs = ((s, config, (i, folders_to_process)) for i, s in enumerate(song_folders))
     # `spawn` to sidestep POSIX fork pain: https://pythonspeed.com/articles/python-multiprocessing/
-    songs = map(lambda x: process_song_folder(*x), inputs)  # single core version for debugging
+    songs = [process_song_folder(*x) for x in inputs]  # single core version for debugging
     # with multiprocessing.get_context("spawn").Pool(10) as pool:
     #     songs = pool.starmap(process_song_folder, inputs)
     # pool.close()
@@ -104,9 +104,6 @@ def infinite2zero(x: Union[np.array, float, int]):
 
 def generate_datasets(song_folders, config: Config):
     timer = Timer()
-    mean, std = None, None
-    # regression_cols = sum(config.training.regression_groups, [])
-    regression_cols = ['mfcc', 'prev', 'next', 'part']
     for phase, split in zip(['train', 'val', 'test'],
                             zip(config.training.data_split,
                                 config.training.data_split[1:])
@@ -125,20 +122,34 @@ def generate_datasets(song_folders, config: Config):
         timer(f'Created {phase} dataset', 1)
         check_consistency(df)
 
-        for col in regression_cols:
-            df[col] = df[col].apply(infinite2zero)
-        timer(f'Added zeros {phase} dataset', 1)
+        if phase == 'train':
+            save_normalization_stats(df, config)
 
-        if mean is None:
-            mean = {col: np.stack(df[col].values).mean(0, dtype=np.float32) for col in regression_cols}
-            std = {col: np.stack(df[col].values).std(0, dtype=np.float32) for col in regression_cols}
-        for col in regression_cols:
-            df[col] = df[col].apply(lambda x: (x - mean[col]) / (std[col] + 1e-6))
+        df = normalize_columns(df, config)
         timer(f'Normalized {phase} dataset', 1)
 
         config.dataset.storage_folder.mkdir(parents=True, exist_ok=True)
         df.to_pickle(result_path, protocol=4)  # Protocol 4 for Python 3.6/3.7 compatibility
         timer(f'Pickled {phase} dataset', 1)
+
+
+def save_normalization_stats(df: pd.DataFrame, config: Config):
+    regression_cols = config.dataset.cols_to_normalize
+    for col in regression_cols:
+        df[col] = df[col].apply(infinite2zero)
+    mean = {col: np.stack(df[col].values).mean(0, dtype=np.float32) for col in regression_cols}
+    std = {col: np.stack(df[col].values).std(0, dtype=np.float32) for col in regression_cols}
+    pd.DataFrame({'mean': mean, 'std': std}).to_pickle(config.dataset.normalization_stats_path)
+    return regression_cols
+
+
+def normalize_columns(df: pd.DataFrame, config: Config):
+    stats = pd.read_pickle(config.dataset.normalization_stats_path)
+
+    for col in set(config.dataset.cols_to_normalize).intersection(df.columns):
+        df[col] = df[col].apply(lambda x: (x - stats['mean'][col]) / (stats['std'][col] + 1e-6))
+
+    return df
 
 
 def load_datasets(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:

@@ -13,7 +13,7 @@ import pandas as pd
 from scipy.special import softmax
 from tensorflow.keras import Model
 
-from process.api import df_post_processing
+from process.api import df_post_processing, normalize_columns
 from process.compute import process_song_folder
 from train.sequence import BeatmapSequence
 from utils.types import Config, JSON
@@ -55,7 +55,7 @@ def generate_beatmap(beatmap_df: pd.DataFrame, seq: BeatmapSequence, stateful_mo
 
     start = time()
     total_len = len(beatmap_df) - 1
-    temperature = 0.80  # TODO: change toconfig.generation.temperature(0)
+    temperature = config.generation.temperature  # TODO: change toconfig.generation.temperature(0)
     for i in range(len(beatmap_df) - 1):
         elapsed = time() - start
         print(f'\r{i:4}: {int(elapsed):3} / ~{int(elapsed * total_len / (i + 1)):3} s', end='', flush=True)
@@ -79,15 +79,15 @@ def generate_beatmap(beatmap_df: pd.DataFrame, seq: BeatmapSequence, stateful_mo
         # get last action in the correct format
         most_recent = {col: seq[0][0][col][:, i + 1:i + 2] for col in stateful_model.input_names}
 
-        window_size = 9
-        new = seq.data['prev_word_vec'][:, i - window_size + 1:i + 1].mean(axis=1)
-        old = seq.data['prev_word_vec'][:, i - window_size - window_size // 2:i - window_size // 2 + 1].mean(axis=1)
-        # print(f' {new.shape=} {old.shape=}', end='')
-        if new.shape == old.shape:
-            velocity = (np.sum((new - old) ** 2)) ** (1 / 2)
-            if np.isfinite(velocity):
-                temperature = min(0.95 - velocity * 0.05, 0.75)
-            print(f' {velocity:4.2f} | {temperature:4.2f}', end='')
+        # window_size = 9
+        # new = seq.data['prev_word_vec'][:, i - window_size + 1:i + 1].mean(axis=1)
+        # old = seq.data['prev_word_vec'][:, i - window_size - window_size // 2:i - window_size // 2 + 1].mean(axis=1)
+        # # print(f' {new.shape=} {old.shape=}', end='')
+        # if new.shape == old.shape:
+        #     velocity = (np.sum((new - old) ** 2)) ** (1 / 2)
+        #     if np.isfinite(velocity):
+        #         temperature = min(0.95 - velocity * 0.05, 0.75)
+        #     print(f' {velocity:4.2f} | {temperature:4.2f}', end='')
 
     save_velocity_hist(seq, config)
     beatmap_df = predictions2df(beatmap_df, seq)
@@ -211,7 +211,8 @@ def zip_folder(folder_path):
 
 
 def update_generated_metadata(gen_folder, beatmap_folder, config):
-    with open(beatmap_folder / 'info.dat', 'r') as rf:
+    info_file: Path = [x for x in beatmap_folder.glob('*.dat') if x.name.lower() == 'info.dat'][0]
+    with open(info_file, 'r') as rf:
         info = json.load(rf)
         difficulties = info['_difficultyBeatmapSets'][0]['_difficultyBeatmaps']
         info['_difficultyBeatmapSets'][0]['_difficultyBeatmaps'] = [x for x in difficulties if x['_difficulty']
@@ -244,9 +245,10 @@ def create_beatmap_dfs(stateful_model: Model, action_model: gensim.models.KeyedV
                        word_id_dict: Dict[str, int], path: Path, config: Config) -> Dict[str, pd.DataFrame]:
     df = process_song_folder(str(path), config)
     df = df_post_processing(df, config)
+    df = normalize_columns(df, config)
 
     config.beat_preprocessing.snippet_window_length = len(df)
-    config.training.batch_size = 1
+    config.training.batch_size = config.generation.batch_size
     output = {}
 
     for difficulty, sub_df in df.groupby('difficulty'):

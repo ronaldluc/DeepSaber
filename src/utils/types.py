@@ -56,6 +56,8 @@ class DatasetConfig:
     beat_maps_folder: Path = ROOT_DIR / 'data/human_beatmaps/new_dataformat'
     storage_folder: Path = ROOT_DIR / 'data/new_datasets'
     action_word_model_path: Path = storage_folder / 'fasttext.model'  # gensim FastText.KeyedVectors class
+    normalization_stats_path: Path = storage_folder / 'col_stats.pkl'
+    cols_to_normalize: Tuple = ('mfcc', 'prev', 'next', 'part',)
     # num_classes: Dict = field(
     #     default_factory=lambda: {'difficulty': 5,  # ending of the column name: number of classes
     #                              '_lineLayer': 3, '_lineIndex': 4, '_cutDirection': 9,
@@ -99,10 +101,10 @@ class DatasetConfig:
 @dataclass
 class TrainingConfig:
     model_type: ModelType = ModelType.CUSTOM  # baseline / ddc / custom
-    cnn_repetition: int = 0
+    cnn_repetition: int = 1
     lstm_repetition: int = 2
     dense_repetition: int = 0
-    model_size: int = 512
+    model_size: int = 384
     dropout: float = 0.4
     initial_learning_rate: float = 9e-3  # 8e-3 default
     data_split: Tuple = (0.0, 0.8, 0.9, 0.99,)
@@ -127,14 +129,16 @@ class TrainingConfig:
             # DatasetConfig().beat_elements_previous_prediction,
             # ['prev_word_id', ],
             ['prev_word_vec', ],
-            DatasetConfig().categorical, DatasetConfig().audio, DatasetConfig().regression
+            DatasetConfig().categorical,
+            # DatasetConfig().audio,
+            DatasetConfig().regression
         ])
     y_groups: List = field(
         default_factory=lambda: [
             # DatasetConfig().beat_elements,
             # DatasetConfig().beat_actions,
-            # ['word_vec', ],
-            ['word_id', ],
+            ['word_vec', ],
+            # ['word_id', ],
         ])
 
 
@@ -147,7 +151,8 @@ def temperature(steps):
 
 @dataclass
 class GenerationConfig:
-    # temperature = 0.7
+    temperature = 0.7
+    batch_size: int = 1  # only 1 for now, will allow to generate multiple maps at once later
     restrict_vocab: int = 500  # use only the first # actions. `None` == use all
     temperature: Callable = temperature
 
