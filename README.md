@@ -40,4 +40,5 @@ This project requires Python 3.8+, TF 2.2+ (recommended TF 2.3). See `Dockerfile
 
 ### Previous DeepSaber version:
 ![DeepSaberv1_GIF](misc/DeepSaber_long.gif)
-Video of the current version coming soon.
+
+- Video of the current version coming soon.
