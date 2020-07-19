@@ -63,7 +63,7 @@ def generate_beatmap(beatmap_df: pd.DataFrame, seq: BeatmapSequence, stateful_mo
 
         # word_vec to word_id prob
         if 'word_vec' in stateful_model.output_names:
-            closest_words = action_model.similar_by_vector(pred['word_vec'].flatten(), topn=3, restrict_vocab=None)
+            closest_words = action_model.similar_by_vector(pred['word_vec'].flatten(), topn=30, restrict_vocab=None)
 
             pred['word_id'] = np.zeros((1, 1, config.dataset.num_classes['word_id']))
             for word, distance in closest_words:
@@ -194,7 +194,8 @@ def update_next(i, output_names, pred, most_recent, seq: BeatmapSequence, temper
         col = f'prev_{col}'
 
         if col in seq.categorical_cols:
-            val = np.log(val) / np.max([temperature, 1e-6])
+            # with np.errstate(divide='ignore'):
+            val = np.log(val + 1e-9) / np.max([temperature, 1e-6])
             val = softmax(val, axis=-1)
             chosen_index = np.random.choice(np.arange(val.shape[-1]), p=val.flatten() / np.sum(val))  # categorical dist
             seq.data[col][:, i + 1] = chosen_index
@@ -219,7 +220,7 @@ def update_generated_metadata(gen_folder, beatmap_folder, config):
                                                                     in config.training.use_difficulties]
         for not_generated in (x['_difficulty'] for x in difficulties
                               if x['_difficulty'] not in config.training.use_difficulties):
-            (gen_folder / not_generated).with_suffix('.dat').unlink()
+            (gen_folder / not_generated).with_suffix('.dat').unlink(missing_ok=True)
         info['_beatsPerMinute'] = 60
         info['_levelAuthorName'] = 'DeepSaber'
 
@@ -254,7 +255,7 @@ def create_beatmap_dfs(stateful_model: Model, action_model: gensim.models.KeyedV
     for difficulty, sub_df in df.groupby('difficulty'):
         if difficulty not in config.training.use_difficulties:
             continue
-        print(f'\nGenerating {difficulty}')
+        print(f'\n\tGenerating {difficulty}')
         seq = BeatmapSequence(df=sub_df, is_train=False, config=config)
 
         # beatmap_df = sub_df.copy()    # bypass the generation

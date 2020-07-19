@@ -101,10 +101,10 @@ class DatasetConfig:
 @dataclass
 class TrainingConfig:
     model_type: ModelType = ModelType.CUSTOM  # baseline / ddc / custom
-    cnn_repetition: int = 1
+    cnn_repetition: int = 0
     lstm_repetition: int = 2
     dense_repetition: int = 0
-    model_size: int = 384
+    model_size: int = 512
     dropout: float = 0.4
     initial_learning_rate: float = 9e-3  # 8e-3 default
     data_split: Tuple = (0.0, 0.8, 0.9, 0.99,)
@@ -127,7 +127,7 @@ class TrainingConfig:
     x_groups: Tuple = field(
         default_factory=lambda: [
             # DatasetConfig().beat_elements_previous_prediction,
-            # ['prev_word_id', ],
+            ['prev_word_id', ],
             ['prev_word_vec', ],
             DatasetConfig().categorical,
             # DatasetConfig().audio,
