@@ -2,7 +2,7 @@
 
 # DeepSaber: Deep Learning for high dimensional choreography
 
-This project requires Python 3.8+, TF 2.2+ (recommended TF 2.3). See `Dockerfile` (which uses `requirements..
+This project requires Python 3.8+, TF 2.2+ (recommended TF 2.3). See `Dockerfile`.
 
 - All settings and hyperparameters are set in `src/utils/types.py`
 - For explanatory notebooks see `src/notebooks`
@@ -28,7 +28,7 @@ This project requires Python 3.8+, TF 2.2+ (recommended TF 2.3). See `Dockerfile
     4. Explore results in `src/notebooks/results_exploration.ipynb`
     
 ## Contributions
-- Beat maps are sentences, actions are words
+- Beat maps are sentences; actions are words
     - Use Word2Vec and FastText to create action embeddings
     - Dataset of action analogies
 - Evaluation of new features for _Learning to choreograph_
@@ -36,5 +36,6 @@ This project requires Python 3.8+, TF 2.2+ (recommended TF 2.3). See `Dockerfile
 - [Multi LSTM architecture](misc/multi_lstm.pdf)
     - Handles well multiple different input streams
 - Local metric based on action embeddings
-- Global metric to measure the similarity between human an synthetic choreography based on the distribution of new actions.
+- Global metric to measure the similarity between human a synthetic choreography based on the distribution of new actions.
 
+![](misc/DeepSaber_long.gif)
