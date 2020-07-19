@@ -3,6 +3,7 @@ from typing import Dict
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from tensorflow import keras
 
 from utils.types import Config
 
@@ -47,3 +48,28 @@ def create_word_mapping(action_model):
     word_id['MASK'] = 0
     word_id['UNK'] = 1
     return word_id
+
+
+def dataset_stats(df: pd.DataFrame):
+    print(df)
+    group_over = ['name', 'difficulty', 'snippet', 'time', ]
+    for end_index in range(1, len(group_over) + 1):
+        print(f"{df.groupby(group_over[:end_index]).ngroups:9} {' × '.join(group_over[:end_index])}")
+
+
+def list2numpy(batch, col_name, groupby=('name')):
+    return np.array(batch.groupby(list(groupby))[col_name].apply(list).to_list())
+
+
+def debug_model(model: keras.Model):
+    for layer in model.layers:
+        shapes = [x.shape for x in layer.weights]
+        print(f'{layer.name:12}: {shapes}')
+    model.summary()
+
+
+def name_generator(prefix):
+    id_ = 0
+    while True:
+        yield f'{prefix}{id_}'
+        id_ += 1

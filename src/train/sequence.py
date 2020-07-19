@@ -1,3 +1,4 @@
+import logging
 from functools import cached_property
 
 import numpy as np
@@ -46,7 +47,7 @@ class BeatmapSequence(Sequence):
                     0]
                 data_dict[col] = keras.utils.to_categorical(data_dict[col], num_classes, dtype='float32')
 
-        if self.is_train:  # Mixup: https://arxiv.org/pdf/1710.09412.pdf
+        if self.is_train and self.config.training.mixup_alpha >= 1e-4:  # Mixup: https://arxiv.org/pdf/1710.09412.pdf
             size = min(self.num_snippets, (idx + 1) * self.batch_size) - idx * self.batch_size
             new_order = np.arange(size)
             np.random.shuffle(new_order)
@@ -59,7 +60,7 @@ class BeatmapSequence(Sequence):
         return {col: data_dict[col] for col in self.x_cols}, {col: data_dict[col] for col in self.y_cols}
 
     def on_epoch_end(self):
-        """Mirror horizontally"""
+        """Shuffle the data to make new Mixups possible"""
         new_order = np.arange(self.num_snippets)
         np.random.shuffle(new_order)
         for col in self.data:
@@ -93,3 +94,8 @@ class BeatmapSequence(Sequence):
         for col in self.data:
             if len(self.data[col].shape) < 3:
                 self.data[col] = self.data[col].reshape(*shape, 1)
+
+        if self.data['word_id'].max() == 0 and 'word_id' in ' '.join(self.shapes.keys()):
+            logging.log(logging.ERROR, f'Using action vector space information without loaded FastText action '
+                                       f'embeddings. The embeddings should be in '
+                                       f'{config.dataset.action_word_model_path}')

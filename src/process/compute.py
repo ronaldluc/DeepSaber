@@ -1,7 +1,6 @@
 import json
 import os
 import signal
-from multiprocessing.pool import Pool
 from sys import stderr
 
 import numba
@@ -9,6 +8,7 @@ import numpy as np
 import pandas as pd
 import soundfile as sf
 import speechpy
+from tensorflow.python.distribute.multi_process_lib import multiprocessing
 
 from utils.functions import progress
 from utils.types import Config, JSON
@@ -217,14 +217,14 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
     for dirpath, dirnames, filenames in os.walk(folder):
         files.extend(filenames)
         break
-    info_path = os.path.join(folder, [x for x in files if 'info' in x][0])
+    info_path = os.path.join(folder, [x for x in files if 'info' in x.lower()][0])
     file_ogg = os.path.join(folder, [x for x in files if x.endswith('gg')][0])
     folder_name = folder.split('/')[-1]
     df_difficulties = []
 
     try:
         mfcc_df = path2mfcc_df(file_ogg, config=config)
-    except (ValueError, FileNotFoundError) as e:
+    except (ValueError, FileNotFoundError, AttributeError) as e:  # TODO: Remove AttributeError if not necessary
         print(f'\n\t[process | process_song_folder] Skipped file {folder_name}  |  {folder}:\n\t\t{e}', file=stderr)
         return None
 
@@ -240,7 +240,7 @@ def process_song_folder(folder, config: Config, order=(0, 1)):
                 df_difficulties.append(df)
             except (ValueError, IndexError, KeyError, UnicodeDecodeError) as e:
                 print(
-                    f'\n\t[process | process_song_folder] Skipped file {folder_name}/{difficulty}  |  {folder}:\n\t\t{e}',
+                    f'\n\t[process | process_song_folder] Skipped file {folder_name}/{difficulty} | {folder}:\n\t\t{e}',
                     file=stderr)
 
     if df_difficulties:
@@ -258,7 +258,8 @@ def add_multiindex(df, difficulty, folder_name):
 def add_previous_prediction(df: pd.DataFrame, config: Config):
     beat_elements_pp = config.dataset.beat_elements_previous_prediction
     beat_actions_pp = config.dataset.beat_actions_previous_prediction
-    df[beat_elements_pp + beat_actions_pp] = df[config.dataset.beat_elements + config.dataset.beat_actions].shift(1)
+    df_shifted = df[config.dataset.beat_elements + config.dataset.beat_actions].shift(1)
+    df[beat_elements_pp + beat_actions_pp] = df_shifted
     df = df.dropna().copy()
     df.loc[:, beat_elements_pp] = df[beat_elements_pp].astype('int8')
 
@@ -279,16 +280,24 @@ def join_closest_index(df: pd.DataFrame, other: pd.DataFrame, other_name: str = 
     original_index = df.index
     round_index = other.index.values[1] - other.index.values[0]
     df.index = np.floor(df.index / round_index).astype(int)
-    other.index = (other.index / round_index).astype(int)
-    other = other.reset_index(drop=True)
+    other_offset = (other.index / round_index).astype(int).min() - 1
+    other = other.reset_index(drop=True)  # make sure whole int span is exactly covered
+    other.index = other.index + other_offset
 
     other.name = other_name
-    df = df.join(other)
+    if len(other.columns) == 1:
+        df = df.join(other)
+    else:
+        df = df.join(other, rsuffix=f'_{other_name}')
     df.index = original_index
     return df
 
 
 def path2mfcc_df(ogg_path, config: Config) -> pd.DataFrame:
+    """
+    Generate MFCC audio representation for a given ogg file path.
+    The representation computed depends on `config.audio_processing` setting.
+    """
     cache_path = f'{".".join(ogg_path.split(".")[:-1])}.pkl'
 
     if os.path.exists(cache_path):
@@ -303,7 +312,11 @@ def path2mfcc_df(ogg_path, config: Config) -> pd.DataFrame:
     if config.audio_processing.use_temp_derrivatives:
         df = df.join(df.diff().fillna(0), rsuffix='_d')
 
-    df.index = df.index + config.audio_processing.time_shift
+    if config.audio_processing.time_shift is not None:
+        df_shifted = df.copy()
+        df_shifted.index = df_shifted.index + config.audio_processing.time_shift
+        df = join_closest_index(df, df_shifted, 'shifted')
+        df.dropna(inplace=True)
 
     flatten = np.split(df.to_numpy().astype('float16').flatten(), len(df.index))
     return pd.DataFrame(data={'mfcc': flatten},
@@ -321,10 +334,10 @@ def audio2mfcc_df(signal: np.ndarray, samplerate: int, config: Config) -> pd.Dat
         signal = signal[:, 0]
 
     # Pre-emphasize
-    # signal_preemphasized = speechpy.processing.preemphasis(signal, cof=0.98)  # TODO: should be used?
+    signal_preemphasized = speechpy.processing.preemphasis(signal, cof=0.98)  # TODO: should be used?
 
     # Extract MFCC features
-    mfcc = speechpy.feature.mfcc(signal,
+    mfcc = speechpy.feature.mfcc(signal_preemphasized,
                                  sampling_frequency=samplerate,
                                  frame_length=config.audio_processing.frame_length,
                                  frame_stride=config.audio_processing.frame_stride,
@@ -354,10 +367,12 @@ def create_ogg_cache(ogg_path, config: Config, order=(0, 1)):
 def create_ogg_caches(ogg_paths, config: Config):
     total = len(ogg_paths)
     inputs = ((s, config, (i, total)) for i, s in enumerate(ogg_paths))
-    pool = Pool(initializer=init_worker())
-    pool.starmap(create_ogg_cache, inputs)
-    pool.close()
-    pool.join()
+    # `spawn` to sidestep POSIX fork pain: https://pythonspeed.com/articles/python-multiprocessing/
+    with multiprocessing.get_context("spawn").Pool(initializer=init_worker()) as pool:
+        # pool = Pool(initializer=init_worker())
+        pool.starmap(create_ogg_cache, inputs)
+        pool.close()
+        pool.join()
 
 
 def remove_ogg_cache(ogg_paths):
@@ -376,24 +391,6 @@ def create_ogg_paths(song_folders):
             break
         ogg_paths.append(os.path.join(folder, [x for x in files if x.endswith('gg')][0]))
     return ogg_paths
-
-
-if __name__ == '__main__':
-    # TODO: Does not work on files with BMP changes
-    config = Config()
-    # config.audio_processing.use_cache = False
-    df1 = process_song_folder('../data/new_dataformat/3207', config=config)
-    print(df1.columns)
-
-    df1 = process_song_folder('../data/new_dataformat/3db2', config=config)
-    # df1 = path2beat_df('../data/new_dataformat/4b58/ExpertPlus.dat',
-    #                    '../data/new_dataformat/4b58/info.dat')
-    # df1 = path2df('../data/new_dataformat/5535/ExpertPlus.dat',
-    #               '../data/new_dataformat/5535/info.dat')
-    # df1 = path2df('../data/new_dataformat/3207/Expert.dat',
-    #               '../data/new_dataformat/3207/info.dat')
-
-    print(df1)
 
 
 def generate_snippets(song_df: pd.DataFrame, config: Config):
@@ -419,3 +416,14 @@ def generate_snippets(song_df: pd.DataFrame, config: Config):
 
     df = pd.concat(stack, keys=list(range(0, len(song_df), skip)), names=['snippet', 'time'])
     return df
+
+
+if __name__ == '__main__':
+    config = Config()
+    # config.audio_processing.use_cache = False
+    df1 = process_song_folder('../data/new_dataformat/3207', config=config)
+    print(df1.columns)
+
+    df1 = process_song_folder('../data/new_dataformat/3db2', config=config)
+
+    print(df1)

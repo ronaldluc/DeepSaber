@@ -1,20 +1,13 @@
-from tensorflow import keras as K
 from tensorflow.python.keras.metrics import cosine_similarity, MeanMetricWrapper
 
+from train.losses import calculate_perplexity
 from utils.types import Config
 
 
-def create_metrics(config: Config):
-    return ['accuracy', ]
-
-
-def mean_pred(y_true, y_pred):
-    print('=' * 42)
-    print('True labels')
-    print(y_true)
-    print('Pred labels')
-    print(y_pred)
-    return K.backend.mean(y_pred)
+def create_metrics(is_train, config: Config):
+    if is_train:
+        return []  # all are computed by the AVS model
+    return ['acc', Perplexity()]
 
 
 def compute_acc(res_dict):
@@ -40,3 +33,8 @@ class CosineDistance(MeanMetricWrapper):
         similarity is computed.
     """
         super(CosineDistance, self).__init__(cosine_distance, name, dtype=dtype, axis=axis)
+
+
+class Perplexity(MeanMetricWrapper):
+    def __init__(self, name='perplexity', dtype=None):
+        super(Perplexity, self).__init__(calculate_perplexity, name, dtype=dtype)
