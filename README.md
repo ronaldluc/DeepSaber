@@ -33,9 +33,8 @@ This project requires Python 3.8+, TF 2.2+ (recommended TF 2.3). See `Dockerfile
     - Dataset of action analogies
 - Evaluation of new features for _Learning to choreograph_
     - Part of the song, difficulty, MFCC, etc.
-- Multi LSTM architecture
+- [Multi LSTM architecture](misc/multi_lstm.pdf)
     - Handles well multiple different input streams
 - Local metric based on action embeddings
 - Global metric to measure the similarity between human an synthetic choreography based on the distribution of new actions.
 
-![Multi LSTM architecture](misc/multi_lstm.pdf)
