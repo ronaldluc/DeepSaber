@@ -24,21 +24,3 @@ def generate_complete_beatmaps(beatmap_folder: Path, output_folder: Path, statef
     update_generated_metadata(gen_folder, beatmap_folder, config)
 
     zip_folder(gen_folder)
-
-# if __name__ == '__main__':
-#     gen_new_beat_map_path = '../data/new_dataformat/4ede/'
-#     config = Config()
-#     #
-#     # df1 = songs2dataset([gen_new_beat_map_path, ], config)
-#     #
-#     # df2 = process_song_folder(gen_new_beat_map_path, config)
-#     # config.beat_preprocessing.snippet_window_length = len(df2)
-#     #
-#     # seq = BeatmapSequence(df2, config)
-#     # # ['name', 'difficulty', 'snippet', 'time']
-#     # print('done')
-#
-#     path = '../data/temp/beatmap_df.pkl'
-#     df = pd.read_pickle(path)
-#     df2beatmap(df, config)
-#     print(df)

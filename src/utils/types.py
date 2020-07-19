@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from time import time
-from typing import Tuple, Dict, Callable
+from typing import Tuple, Dict
 from typing import Union, Mapping, List
 
 import gensim
@@ -58,20 +58,15 @@ class DatasetConfig:
     action_word_model_path: Path = storage_folder / 'fasttext.model'  # gensim FastText.KeyedVectors class
     normalization_stats_path: Path = storage_folder / 'col_stats.pkl'
     cols_to_normalize: Tuple = ('mfcc', 'prev', 'next', 'part',)
-    # num_classes: Dict = field(
-    #     default_factory=lambda: {'difficulty': 5,  # ending of the column name: number of classes
-    #                              '_lineLayer': 3, '_lineIndex': 4, '_cutDirection': 9,
-    #                              'word_id': len(gensim.models.KeyedVectors.load(
-    #                                  str(DatasetConfig.action_word_model_path)).vocab) + 2})
     difficulty_mapping: Dict = field(
         default_factory=lambda: {d: enum for enum, d in enumerate(['Easy', 'Normal', 'Hard', 'Expert', 'ExpertPlus'])})
 
     # dataset groups
-    beat_elements: List = field(
+    beat_elements: List = field(  # Only one action per hand per beat
         default_factory=lambda: BeatPreprocessingConfig().beat_elements)
     beat_actions: List = field(
         default_factory=lambda: BeatPreprocessingConfig().beat_actions)
-    beat_elements_previous_prediction: List = field(
+    beat_elements_previous_prediction: List = field(  # Only one action per hand per beat
         default_factory=lambda: [f'prev_{x}' for x in BeatPreprocessingConfig().beat_elements])
     beat_actions_previous_prediction: List = field(
         default_factory=lambda: [f'prev_{x}' for x in BeatPreprocessingConfig().beat_actions])
@@ -125,36 +120,27 @@ class TrainingConfig:
         default_factory=lambda: [DatasetConfig().audio, DatasetConfig().regression,
                                  ['word_vec', 'prev_word_vec', ]])  # in dataset groups
     x_groups: Tuple = field(
-        default_factory=lambda: [
+        default_factory=lambda: [  # Choose the inputs to predict from
             # DatasetConfig().beat_elements_previous_prediction,
             ['prev_word_id', ],
             ['prev_word_vec', ],
             DatasetConfig().categorical,
-            # DatasetConfig().audio,
+            DatasetConfig().audio,
             DatasetConfig().regression
         ])
     y_groups: List = field(
-        default_factory=lambda: [
+        default_factory=lambda: [  # Choose the outputs to predict
             # DatasetConfig().beat_elements,
-            # DatasetConfig().beat_actions,
             ['word_vec', ],
-            # ['word_id', ],
+            ['word_id', ],
         ])
-
-
-def temperature(steps):
-    # if random.randint(0, 10):
-    if steps % 8 == 0:
-        return 0.85
-    return 0.4  # + 1 / (steps + 3)
 
 
 @dataclass
 class GenerationConfig:
-    temperature = 0.7
+    temperature: int = 0.7  # different models need different temperatures, for more see `temperature_search.py`
     batch_size: int = 1  # only 1 for now, will allow to generate multiple maps at once later
     restrict_vocab: int = 500  # use only the first # actions. `None` == use all
-    temperature: Callable = temperature
 
 
 @dataclass
@@ -166,6 +152,8 @@ class Config:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     generation: GenerationConfig = field(default_factory=GenerationConfig)
     base_data_folder: Path = ROOT_DIR / 'data'
+    use_multiprocessing: bool = False  # Turn off multiprocessing if the preprocessing gets stuck
+    # POSIX fork pain: https://pythonspeed.com/articles/python-multiprocessing/
 
 
 class Timer:

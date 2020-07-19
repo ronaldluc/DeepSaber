@@ -12,6 +12,4 @@ if __name__ == '__main__':
     experiments.best_model_comparison.main()
     experiments.hypersearch_model.main()
     experiments.information_comparison.main()
-    experiments.information_comparison.mainly_id()
-    experiments.information_comparison.mainly_vec()
     experiments.temperature_search.main()

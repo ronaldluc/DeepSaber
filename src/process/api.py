@@ -1,5 +1,6 @@
 import logging
 import math
+import multiprocessing
 import os
 from typing import Tuple, Optional, Union
 
@@ -46,13 +47,16 @@ def songs2dataset(song_folders, config: Config) -> Optional[pd.DataFrame]:
     folders_to_process = len(song_folders)
 
     inputs = ((s, config, (i, folders_to_process)) for i, s in enumerate(song_folders))
-    # `spawn` to sidestep POSIX fork pain: https://pythonspeed.com/articles/python-multiprocessing/
-    songs = [process_song_folder(*x) for x in inputs]  # single core version for debugging
-    # with multiprocessing.get_context("spawn").Pool(10) as pool:
-    #     songs = pool.starmap(process_song_folder, inputs)
-    # pool.close()
-    # pool.join()
-    # timer('Pool closed')
+
+    if config.use_multiprocessing:
+        # `spawn` to sidestep POSIX fork pain: https://pythonspeed.com/articles/python-multiprocessing/
+        with multiprocessing.get_context("spawn").Pool(10) as pool:
+            songs = pool.starmap(process_song_folder, inputs)
+        pool.close()
+        pool.join()
+        timer('Pool closed')
+    else:
+        songs = [process_song_folder(*x) for x in inputs]  # single core version for debugging
     timer('Computed partial dataframes from folders')
 
     songs = [x for x in songs if x is not None]
@@ -93,8 +97,6 @@ def df_post_processing(df, config):
 
 def infinite2zero(x: Union[np.array, float, int]):
     if type(x).__module__ == np.__name__:
-        if len(x[~np.isfinite(x)]) > 0:
-            print(f'Changed {x}')
         x[~np.isfinite(x)] = 0.0
         return x
     if not math.isfinite(x):
@@ -124,6 +126,7 @@ def generate_datasets(song_folders, config: Config):
 
         if phase == 'train':
             save_normalization_stats(df, config)
+            timer(f'Saved normalization stats', 1)
 
         df = normalize_columns(df, config)
         timer(f'Normalized {phase} dataset', 1)

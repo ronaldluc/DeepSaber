@@ -1,3 +1,5 @@
+""" Functions used by multiple experiments """
+
 import gc
 import multiprocessing
 import random

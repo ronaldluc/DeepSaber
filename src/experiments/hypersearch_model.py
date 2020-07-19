@@ -1,3 +1,5 @@
+""" Perform hyperparameter search for special"""
+
 import kerastuner as kt
 import tensorflow as tf
 
@@ -18,47 +20,47 @@ def main():
     model_path = base_folder / 'temp'
 
     find_model = True
-    # find_model = False
     train_model = True
-    train_model = False
     eval_model = True
-    eval_model = False
     if find_model:
-        train_seq = BeatmapSequence(df=train, is_train=True, config=config)
-        val_seq = BeatmapSequence(df=val, is_train=False, config=config)
-        test_seq = BeatmapSequence(df=test, is_train=False, config=config)
+        for model_type in [ModelType.TUNE_CLSTM, ModelType.TUNE_MLSTM]:
+            train_seq = BeatmapSequence(df=train, is_train=True, config=config)
+            val_seq = BeatmapSequence(df=val, is_train=False, config=config)
+            test_seq = BeatmapSequence(df=test, is_train=False, config=config)
 
-        config.training.model_type = ModelType.TUNE_CLSTM
+            # To search for a specific input:output combination, change `config`
+            config.training.model_type = model_type
 
-        tuner = kt.Hyperband(
-            get_architecture_fn(config)(train_seq, False, config),
-            objective=kt.Objective('val_avs_dist', direction='min'),
-            hyperband_iterations=1,
-            max_epochs=100,
-            factor=4,
-            directory=base_folder / 'temp' / 'hyper_search',
-            project_name=f'{get_architecture_fn(config).__qualname__}_id3',
-            overwrite=False,  # TODO: CAUTION!
-        )
-        tuner.search_space_summary()
+            tuner = kt.Hyperband(
+                get_architecture_fn(config)(train_seq, False, config),
+                objective=kt.Objective('val_avs_dist', direction='min'),
+                hyperband_iterations=1,
+                max_epochs=100,
+                factor=4,
+                directory=base_folder / 'temp' / 'hyper_search',
+                project_name=f'{get_architecture_fn(config).__qualname__}',
+                overwrite=False,  # CAUTION!
+            )
+            tuner.search_space_summary()
 
-        callbacks = create_callbacks(train_seq, config)
+            callbacks = create_callbacks(train_seq, config)
 
-        tuner.search(x=train_seq,
-                     validation_data=val_seq,
-                     callbacks=callbacks,
-                     epochs=60,
-                     verbose=2,
-                     workers=10,
-                     max_queue_size=16,
-                     use_multiprocessing=False,
-                     )
+            tuner.search(x=train_seq,
+                         validation_data=val_seq,
+                         callbacks=callbacks,
+                         epochs=60,
+                         verbose=2,
+                         workers=10,
+                         max_queue_size=16,
+                         use_multiprocessing=False,
+                         )
 
-        print(tuner.results_summary())
-        print(tuner.get_best_models(2)[0].summary())
-        print(tuner.get_best_models(2)[0].evaluate(test_seq))
+            print(tuner.results_summary())
+            print(tuner.get_best_models(2)[0].summary())
+            print(tuner.get_best_models(2)[0].evaluate(test_seq))
 
     if train_model:
+        # Train specific huperparameters
         hp = kt.HyperParameters()
         fixed_params = {'connections_0': 2,
                         'connections_1': 2,

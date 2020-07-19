@@ -39,6 +39,7 @@ def main():
     model_path = base_folder / 'temp'
     model_path.mkdir(parents=True, exist_ok=True)
 
+    # The best found temperature is ~0.91
     configuration_name = 'MLSTM'
     config.training.model_type = ModelType.TUNE_MLSTM
     config.training.batch_size = 128
@@ -84,7 +85,8 @@ def main():
         hp.Fixed(param, value=value)
     find_temperature_and_generate(base_folder, train, val, test, model_path, configuration_name, deepcopy(config), hp)
 
-    configuration_name = 'id:id'
+    # The best found temperature is ~0.71
+    configuration_name = 'vec:id'
     config.training.model_type = ModelType.CUSTOM
     config.training.cnn_repetition = 2
     config.training.lstm_repetition = 2
@@ -101,6 +103,7 @@ def main():
     config.training.y_groups = [['word_id'], ]
     find_temperature_and_generate(base_folder, train, val, test, model_path, configuration_name, deepcopy(config))
 
+    # The best found temperature is ~0.147
     configuration_name = 'vec:vec'
     config.training.model_type = ModelType.CUSTOM
     config.training.cnn_repetition = 2

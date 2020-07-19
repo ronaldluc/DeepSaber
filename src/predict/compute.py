@@ -69,7 +69,7 @@ def generate_beatmap(beatmap_df: pd.DataFrame, seq: BeatmapSequence, stateful_mo
             for word, distance in closest_words:
                 pred['word_id'][:, :, word_id_dict[word]] = distance
 
-        update_next(i, output_names, pred, most_recent, seq, temperature, config)
+        update_next(i, pred, seq, temperature, config)
 
         update_action_representations(i, action_model, seq, word_id_dict, pred, reverse_word_id_dict, config)
 
@@ -79,15 +79,8 @@ def generate_beatmap(beatmap_df: pd.DataFrame, seq: BeatmapSequence, stateful_mo
         # get last action in the correct format
         most_recent = {col: seq[0][0][col][:, i + 1:i + 2] for col in stateful_model.input_names}
 
-        # window_size = 9
-        # new = seq.data['prev_word_vec'][:, i - window_size + 1:i + 1].mean(axis=1)
-        # old = seq.data['prev_word_vec'][:, i - window_size - window_size // 2:i - window_size // 2 + 1].mean(axis=1)
-        # # print(f' {new.shape=} {old.shape=}', end='')
-        # if new.shape == old.shape:
-        #     velocity = (np.sum((new - old) ** 2)) ** (1 / 2)
-        #     if np.isfinite(velocity):
-        #         temperature = min(0.95 - velocity * 0.05, 0.75)
-        #     print(f' {velocity:4.2f} | {temperature:4.2f}', end='')
+        # Experiment with moving temperature based on AVD distance. Needs further research
+        # temperature = responsive_temperature(seq, temperature, i)
 
     save_velocity_hist(seq, config)
     beatmap_df = predictions2df(beatmap_df, seq)
@@ -97,6 +90,19 @@ def generate_beatmap(beatmap_df: pd.DataFrame, seq: BeatmapSequence, stateful_mo
         beatmap_df[col] = beatmap_df[f'prev_{col}']
 
     return beatmap_df[stateful_model.output_names]  # output only generated columns
+
+
+def responsive_temperature(seq: BeatmapSequence, temperature, i):
+    window_size = 9
+    new = seq.data['prev_word_vec'][:, i - window_size + 1:i + 1].mean(axis=1)
+    old = seq.data['prev_word_vec'][:, i - window_size - window_size // 2:i - window_size // 2 + 1].mean(axis=1)
+    # print(f' {new.shape=} {old.shape=}', end='')
+    if new.shape == old.shape:
+        velocity = (np.sum((new - old) ** 2)) ** (1 / 2)
+        if np.isfinite(velocity):
+            temperature = min(0.95 - velocity * 0.05, 0.75)
+        print(f' {velocity:4.2f} | {temperature:4.2f}', end='')
+    return temperature
 
 
 def cosine_dist(a, b):
@@ -109,7 +115,7 @@ def l2_dist(a, b):
     return dist
 
 
-def save_velocity_hist(seq, config):
+def save_velocity_hist(seq: BeatmapSequence, config: Config):
     mean = pd.DataFrame(seq.data['prev_word_vec'][0]).rolling(7).mean()
     velocity = l2_dist(mean, mean.shift(4))
     # velocity = cosine_dist(mean.values, mean.shift(4).values)
@@ -119,8 +125,9 @@ def save_velocity_hist(seq, config):
     fig.savefig(config.base_data_folder / 'temp' / 'distribution.pdf')
 
 
-def update_action_representations(i, action_model: gensim.models.KeyedVectors, seq, word_id_dict, pred,
-                                  reverse_word_id_dict, config: Config):
+def update_action_representations(i: int, action_model: gensim.models.KeyedVectors, seq: BeatmapSequence,
+                                  word_id_dict: Dict[str, int], pred: Dict[str, np.ndarray],
+                                  reverse_word_id_dict: Dict[int, np.ndarray], config: Config):
     # update all representations, to make interesting models possible without data leaking.
     if 'word_id' in pred.keys():  # `word_id` is the prefered action representation
         word_str = reverse_word_id_dict[int(seq.data['prev_word_id'][:, i + 1])]
@@ -139,7 +146,7 @@ def update_action_representations(i, action_model: gensim.models.KeyedVectors, s
         seq.data['prev_word_id'][:, i + 1] = word_id_dict[closest_word_str]
 
 
-def per_attribute2word_str(i, seq):
+def per_attribute2word_str(i: int, seq: BeatmapSequence):
     word = []
     for hand in 'lr':
         word += [hand.upper()]
@@ -150,7 +157,8 @@ def per_attribute2word_str(i, seq):
     return prev_word
 
 
-def clip_next_to_closest_existing(i, action_model, seq: BeatmapSequence, word_id_dict, config: Config):
+def clip_next_to_closest_existing(i: int, action_model: gensim.models.KeyedVectors, seq: BeatmapSequence,
+                                  word_id_dict: Dict[str, int], config: Config):
     prev_word = per_attribute2word_str(i, seq)
     closest_word_str = action_model.similar_by_vector(action_model[prev_word],
                                                       topn=1, restrict_vocab=config.generation.restrict_vocab)[0][0]
@@ -161,7 +169,7 @@ def clip_next_to_closest_existing(i, action_model, seq: BeatmapSequence, word_id
     word_str2per_attribute(i, closest_word_str, seq)
 
 
-def word_str2per_attribute(i, closest_word_str, seq):
+def word_str2per_attribute(i: int, closest_word_str: str, seq: BeatmapSequence):
     action_dim_values = *closest_word_str[1:4], *closest_word_str[-3:]  # extract first and last beat elements
     for (hand, dim), chosen_index in zip(product('lr', ['lineLayer', 'lineIndex', 'cutDirection']),
                                          action_dim_values):
@@ -172,7 +180,7 @@ def word_str2per_attribute(i, closest_word_str, seq):
             seq.data[col][:, i + 1] = chosen_index
 
 
-def append_last_prediction(beatmap_df, most_recent):
+def append_last_prediction(beatmap_df: pd.DataFrame, most_recent):
     last_row = beatmap_df.iloc[-1]
     last_time = float(last_row['next']) + beatmap_df.index[-1]
     added_row = pd.Series(most_recent, name=last_time).map(np.ndarray.flatten)
@@ -180,7 +188,7 @@ def append_last_prediction(beatmap_df, most_recent):
     return beatmap_df
 
 
-def predictions2df(beatmap_df, seq):
+def predictions2df(beatmap_df: pd.DataFrame, seq: BeatmapSequence):
     for col, val in seq.data.items():
         beatmap_df[col] = np.split(val.flatten(), val.shape[1])
     beatmap_df = beatmap_df.reset_index('name').drop(columns='name')
@@ -188,7 +196,7 @@ def predictions2df(beatmap_df, seq):
 
 
 # @numba.njit()
-def update_next(i, output_names, pred, most_recent, seq: BeatmapSequence, temperature, config: Config):
+def update_next(i: int, pred: Dict[str, np.ndarray], seq: BeatmapSequence, temperature, config: Config):
     # for col, val in zip(output_names, pred):  # TF 2.1
     for col, val in pred.items():  # TF 2.2+
         col = f'prev_{col}'
@@ -203,7 +211,7 @@ def update_next(i, output_names, pred, most_recent, seq: BeatmapSequence, temper
             seq.data[col][:, i + 1] = val
 
 
-def zip_folder(folder_path):
+def zip_folder(folder_path: Path):
     print(folder_path)
     with ZipFile((folder_path / folder_path.name).with_suffix('.zip'), 'w') as write_zip:
         for file in folder_path.glob('*.*'):
@@ -211,7 +219,7 @@ def zip_folder(folder_path):
                 write_zip.write(file, file.name)
 
 
-def update_generated_metadata(gen_folder, beatmap_folder, config):
+def update_generated_metadata(gen_folder: Path, beatmap_folder: Path, config: Config):
     info_file: Path = [x for x in beatmap_folder.glob('*.dat') if x.name.lower() == 'info.dat'][0]
     with open(info_file, 'r') as rf:
         info = json.load(rf)
@@ -228,7 +236,8 @@ def update_generated_metadata(gen_folder, beatmap_folder, config):
             json.dump(info, wf)
 
 
-def save_generated_beatmaps(gen_folder, beatmap_dfs, action_model: gensim.models.KeyedVectors,
+def save_generated_beatmaps(gen_folder: Path, beatmap_dfs: Dict[str, pd.DataFrame],
+                            action_model: gensim.models.KeyedVectors,
                             word_id_dict: Dict[str, int], config):
     for difficulty, df in beatmap_dfs.items():
         beatmap = df2beatmap(df, action_model, word_id_dict, config)
@@ -236,7 +245,7 @@ def save_generated_beatmaps(gen_folder, beatmap_dfs, action_model: gensim.models
             json.dump(beatmap, wf)
 
 
-def copy_folder_contents(in_folder, out_folder):
+def copy_folder_contents(in_folder: Path, out_folder: Path):
     for file in in_folder.glob('*.*'):
         if file.is_file():
             copy(file, out_folder)
@@ -293,7 +302,7 @@ def df2beatmap(df: pd.DataFrame, action_model: gensim.models.KeyedVectors,
     return beatmap
 
 
-def double_beat_element2json(df, config):
+def double_beat_element2json(df: pd.DataFrame, config: Config):
     notes = []
     plain_col_names = [x[2:] for x in config.dataset.beat_elements if x[0] == 'l' and 'cutDirection' not in x]
     partially_equal_beat_elements = [df[f'l_{col}'].astype(int)

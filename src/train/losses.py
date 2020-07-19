@@ -8,15 +8,13 @@ from tensorflow.python.util import dispatch
 def calculate_perplexity(y_true, y_pred, from_logits=False, label_smoothing=0):
     """
     Based on Gregorgeous github Gist: https://gist.github.com/Gregorgeous/dbad1ec22efc250c76354d949a13cec3
+    Does not support masks.
     """
     # The next 4 lines zero-out the padding from loss calculations,
     # this follows the logic from: https://www.tensorflow.org/beta/tutorials/text/transformer#loss_and_metrics
     # mask = tf.math.logical_not(tf.math.equal(y_true, 0))
     loss_ = keras.losses.categorical_crossentropy(y_true, y_pred, from_logits=from_logits,
                                                   label_smoothing=label_smoothing)
-    # mask = tf.cast(mask, dtype=loss_.dtype)
-    # loss_ *= mask
-    # Calculating the perplexity steps:
     step1 = keras.backend.mean(loss_, axis=-1)
     step2 = keras.backend.exp(step1)
     perplexity = keras.backend.mean(step2)

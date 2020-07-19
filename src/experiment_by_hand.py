@@ -1,3 +1,5 @@
+""""""
+
 import gc
 import random
 
@@ -27,16 +29,18 @@ def main():
 
     base_folder = config.base_data_folder
 
+    # Use full dataset
     song_folders = create_song_list(config.dataset.beat_maps_folder)
+    # config.dataset.storage_folder = base_folder / 'old_datasets'
+    config.dataset.storage_folder = base_folder / 'new_datasets'
+
+    # Use test set
+    # song_folders = create_song_list(config.dataset.beat_maps_folder)[:100]
+    # config.dataset.storage_folder = base_folder / 'test_datasets'
+    config.audio_processing.use_cache = True
 
     total = len(song_folders)
     print(f'Found {total} folders')
-
-    config.dataset.storage_folder = base_folder / 'new_datasets_config_test'
-    # config.dataset.storage_folder = base_folder / 'old_datasets'
-    # config.dataset.storage_folder = base_folder / 'new_datasets'
-    config.dataset.storage_folder = base_folder / 'test_datasets'
-    config.audio_processing.use_cache = True
 
     generate_datasets(song_folders, config)
 
@@ -56,18 +60,16 @@ def main():
     # del train, val, test  # delete the data if experiencing RAM problems
     gc.collect()
 
-    # keras.mixed_precision.experimental.set_policy('mixed_float16')
+    # keras.mixed_precision.experimental.set_policy('mixed_float16')    # Undefined behavior with advanced models
     model_path = base_folder / 'temp'
     model_path.mkdir(parents=True, exist_ok=True)
 
     train = True
-    train = False
     if train:
         model = get_architecture_fn(config)(train_seq, False, config)
         model.summary()
 
         callbacks = create_callbacks(train_seq, config)
-        # callbacks = []
 
         model.fit(train_seq,
                   validation_data=val_seq,
@@ -90,16 +92,15 @@ def main():
     stateful_model.summary()
     timer('Loaded stateful model', 5)
 
+    # Use generated action placement
     input_folder = base_folder / 'evaluation_dataset' / 'beat_sage'
     input_folder = base_folder / 'evaluation_dataset' / 'oxai_deepsaber_expert'
-    # input_folder = base_folder / 'human_beatmaps' / 'new_dataformat'
-    # output_folder = base_folder / 'testing' / 'generated_songs'
-    output_folder = base_folder / 'evaluation_dataset' / 'deepsaber_vec:vec_topn30_oxai'
+    output_folder = base_folder / 'testing' / 'generated_songs'
     dirs = [x for x in input_folder.glob('*/') if x.is_dir()]
+
+    # Use human action placement from test set
+    # input_folder = base_folder / 'human_beatmaps' / 'new_dataformat'
     # dirs = list(x for x in test.index.to_frame()["name"].unique()[:13])
-    # dirs = ['133b', ]
-    config.generation.temperature = 0.7175201278496998
-    config.generation.temperature = 0.17679017361056135
 
     for song_code in dirs:
         beatmap_folder = input_folder / song_code

@@ -1,7 +1,6 @@
 import json
 import os
 import signal
-from multiprocessing.pool import Pool
 from sys import stderr
 
 import numba
@@ -9,6 +8,7 @@ import numpy as np
 import pandas as pd
 import soundfile as sf
 import speechpy
+from tensorflow.python.distribute.multi_process_lib import multiprocessing
 
 from utils.functions import progress
 from utils.types import Config, JSON
@@ -367,10 +367,12 @@ def create_ogg_cache(ogg_path, config: Config, order=(0, 1)):
 def create_ogg_caches(ogg_paths, config: Config):
     total = len(ogg_paths)
     inputs = ((s, config, (i, total)) for i, s in enumerate(ogg_paths))
-    pool = Pool(initializer=init_worker())
-    pool.starmap(create_ogg_cache, inputs)
-    pool.close()
-    pool.join()
+    # `spawn` to sidestep POSIX fork pain: https://pythonspeed.com/articles/python-multiprocessing/
+    with multiprocessing.get_context("spawn").Pool(initializer=init_worker()) as pool:
+        # pool = Pool(initializer=init_worker())
+        pool.starmap(create_ogg_cache, inputs)
+        pool.close()
+        pool.join()
 
 
 def remove_ogg_cache(ogg_paths):
@@ -389,24 +391,6 @@ def create_ogg_paths(song_folders):
             break
         ogg_paths.append(os.path.join(folder, [x for x in files if x.endswith('gg')][0]))
     return ogg_paths
-
-
-if __name__ == '__main__':
-    # TODO: Does not work on files with BMP changes
-    config = Config()
-    # config.audio_processing.use_cache = False
-    df1 = process_song_folder('../data/new_dataformat/3207', config=config)
-    print(df1.columns)
-
-    df1 = process_song_folder('../data/new_dataformat/3db2', config=config)
-    # df1 = path2beat_df('../data/new_dataformat/4b58/ExpertPlus.dat',
-    #                    '../data/new_dataformat/4b58/info.dat')
-    # df1 = path2df('../data/new_dataformat/5535/ExpertPlus.dat',
-    #               '../data/new_dataformat/5535/info.dat')
-    # df1 = path2df('../data/new_dataformat/3207/Expert.dat',
-    #               '../data/new_dataformat/3207/info.dat')
-
-    print(df1)
 
 
 def generate_snippets(song_df: pd.DataFrame, config: Config):
@@ -432,3 +416,14 @@ def generate_snippets(song_df: pd.DataFrame, config: Config):
 
     df = pd.concat(stack, keys=list(range(0, len(song_df), skip)), names=['snippet', 'time'])
     return df
+
+
+if __name__ == '__main__':
+    config = Config()
+    # config.audio_processing.use_cache = False
+    df1 = process_song_folder('../data/new_dataformat/3207', config=config)
+    print(df1.columns)
+
+    df1 = process_song_folder('../data/new_dataformat/3db2', config=config)
+
+    print(df1)

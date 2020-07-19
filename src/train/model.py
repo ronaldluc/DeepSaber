@@ -228,7 +228,6 @@ def baseline_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         model = AVSModel(inputs=inputs, outputs=outputs, config=config)
 
     opt = keras.optimizers.Adam(lr=config.training.initial_learning_rate)
-    # opt = keras.optimizers.SGD(lr=config.training.initial_learning_rate)
 
     model.compile(
         optimizer=opt,
@@ -281,7 +280,6 @@ def ddc_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
         model = AVSModel(inputs=inputs, outputs=outputs, config=config)
 
     opt = keras.optimizers.Adam(lr=config.training.initial_learning_rate, clipnorm=5.0)
-    # opt = keras.optimizers.SGD(lr=config.training.initial_learning_rate, clipnorm=5.0)
 
     model.compile(
         optimizer=opt,
@@ -298,7 +296,6 @@ def custom_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
 
     inputs = {}
     per_stream = {}
-    # basic_block_size = 512
     basic_block_size = config.training.model_size
     dropout = config.training.dropout
 
@@ -307,18 +304,6 @@ def custom_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
             shape = None, *seq.shapes[col][2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
             per_stream[f'{col}_orig'] = inputs[col]
-            # per_stream[col] = inputs[col]
-            # for _ in range(3):
-            #     per_stream[col] = layers.concatenate(inputs=[layers.Conv1D(filters=basic_block_size // (s - 2),
-            #                                                                kernel_size=s,
-            #                                                                activation='relu',
-            #                                                                padding='causal',
-            #                                                                kernel_initializer='lecun_normal',
-            #                                                                name=names.__next__())(per_stream[col])
-            #                                                  for s in [3, 5, 7]],
-            #                                          axis=-1, name=names.__next__(), )
-            #     per_stream[col] = layers.BatchNormalization(name=names.__next__(), )(per_stream[col])
-            #     per_stream[col] = layers.SpatialDropout1D(0.2)(per_stream[col])
         if col in seq.regression_cols:
             shape = None, *seq.shapes[col][2:]
             inputs[col] = layers.Input(batch_size=batch_size, shape=shape, name=col)
@@ -379,6 +364,7 @@ def custom_model(seq: BeatmapSequence, stateful, config: Config) -> Model:
     else:
         model = AVSModel(inputs=inputs, outputs=outputs, config=config)
 
+        # Triangular LR schedule
         # lr_schedule = tfa.optimizers.TriangularCyclicalLearningRate(
         #     initial_learning_rate=1e-4,
         #     maximal_learning_rate=8e-3,
@@ -625,7 +611,6 @@ def trivial_tuning_model(seq: BeatmapSequence, stateful, config: Config) -> Call
     def build_model(hp: kt.HyperParameters, use_avs_model: bool = False) -> Model:
         batch_size = config.generation.batch_size if stateful else None
         layer_names = name_generator('layer')
-        hyper_names = name_generator('hyper')
 
         inputs = {}
         per_stream = {}

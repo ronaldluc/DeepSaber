@@ -1,3 +1,5 @@
+"""Per-token metrics comparison of the different model types."""
+
 import kerastuner as kt
 
 from experiments.compute import init_test, eval_config
