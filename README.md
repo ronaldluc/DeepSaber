@@ -38,4 +38,6 @@ This project requires Python 3.8+, TF 2.2+ (recommended TF 2.3). See `Dockerfile
 - Local metric based on action embeddings
 - Global metric to measure the similarity between human a synthetic choreography based on the distribution of new actions.
 
-![](misc/DeepSaber_long.gif)
+### Previous DeepSaber version:
+![DeepSaberv1_GIF](misc/DeepSaber_long.gif)
+Video of the current version coming soon.
