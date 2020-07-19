@@ -1,3 +1,5 @@
+![Good and poor flow](misc/action_flow_horizontal.png)
+
 # DeepSaber: Deep Learning for high dimensional choreography
 
 This project requires Python 3.8+, TF 2.2+ (recommended TF 2.3). See `Dockerfile` (which uses `requirements..
@@ -23,4 +25,17 @@ This project requires Python 3.8+, TF 2.2+ (recommended TF 2.3). See `Dockerfile
     1. Explore data set in `src/notebooks/data_exploration.ipynb`
     2. Experiment by hand with `src/experiment_by_hand.py`
     3. Run the experiments `src/run_experiments.py` (takes long, long time)
-    4. Explore results in `src/notebooks/results_exploration.ipynb` 
+    4. Explore results in `src/notebooks/results_exploration.ipynb`
+    
+## Contributions
+- Beat maps are sentences, actions are words
+    - Use Word2Vec and FastText to create action embeddings
+    - Dataset of action analogies
+- Evaluation of new features for _Learning to choreograph_
+    - Part of the song, difficulty, MFCC, etc.
+- Multi LSTM architecture
+    - Handles well multiple different input streams
+- Local metric based on action embeddings
+- Global metric to measure the similarity between human an synthetic choreography based on the distribution of new actions.
+
+![Multi LSTM architecture](misc/multi_lstm.pdf)
