@@ -2,9 +2,9 @@
 
 # DeepSaber: Deep Learning for high dimensional choreography
 
-For the results, please see [the thesis text PDF](misc/DeepSaber_Deep_Learning_for_high_dimensional_choreography.pdf).
+For the results, please see [the thesis PDF](misc/DeepSaber_Deep_Learning_for_high_dimensional_choreography.pdf).
 
-This project requires Python 3.8+, TF 2.2+ (recommended TF 2.3). See `Dockerfile`.
+This project requires Python 3.8+, TF 2.2+ (recommended TF 2.3). See [`Dockerfile`](Dockerfile).
 
 - All settings and hyperparameters are set in [`src/utils/types.py`](src/utils/types.py)
 - For explanatory notebooks see [`src/notebooks`](src/notebooks)
