@@ -2,15 +2,17 @@
 
 # DeepSaber: Deep Learning for high dimensional choreography
 
+For the results, please see [the thesis text PDF](misc/DeepSaber_Deep_Learning_for_high_dimensional_choreography.pdf).
+
 This project requires Python 3.8+, TF 2.2+ (recommended TF 2.3). See `Dockerfile`.
 
-- All settings and hyperparameters are set in `src/utils/types.py`
-- For explanatory notebooks see `src/notebooks`
-- For experiments see `src/experiments` or run `src/run_experiments.py`
-- To train, evaluate and generate action placement for beat maps by hand, modify and run `src/experiment_by_hand.py`
+- All settings and hyperparameters are set in [`src/utils/types.py`](src/utils/types.py)
+- For explanatory notebooks see [`src/notebooks`](src/notebooks)
+- For experiments see [`src/experiments`](src/experiments) or run [`src/run_experiments.py`](src/run_experiments.py)
+- To train, evaluate and generate action placement for beat maps by hand, modify and run [`src/experiment_by_hand.py`](src/experiment_by_hand.py)
 
 - `research` is for previous iterations and experimentation during development  
-- Links to songs used for comparison of this project, OxAI DeepSaberv2 and Beat Sage are in `data/evaluation_dataset/song_urls.txt`
+- Links to songs used for comparison of this project, OxAI DeepSaberv2 and Beat Sage are in [`data/evaluation_dataset/song_urls.txt`](data/evaluation_dataset/song_urls.txt)
 
 ## How to set up this project
 1. Download OxAI or your own beat maps
